@@ -1,0 +1,80 @@
+// Template for your wrangler.jsonc. `pnpm setup` copies this file to wrangler.jsonc, which is
+// git-ignored so your own domain, IDs and addresses never end up in a commit.
+// Edit every value marked CHANGE ME. The README walks through each one.
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "uptime-monitor",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-08-15",
+  "observability": { "enabled": true },
+
+  // CHANGE ME: a hostname on a domain in your Cloudflare account. It is served only on this
+  // Access-protected custom domain. workers.dev and preview URLs stay off so there is no
+  // hostname that bypasses Cloudflare Access.
+  "routes": [{ "pattern": "uptime.example.com", "custom_domain": true }],
+  "workers_dev": false,
+  "preview_urls": false,
+
+  // "* * * * *": checks, notification delivery and retries, retention.
+  // "*/5 * * * *": weekly report. The handler acts only on Monday from REPORT_HOUR in
+  // TIME_ZONE (for two hours, to allow retries), so these cron strings need no editing.
+  // They are matched by exact string in src/, so don't change them.
+  "triggers": { "crons": ["* * * * *", "*/5 * * * *"] },
+
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "uptime",
+      // CHANGE ME: the id printed by `pnpm exec wrangler d1 create uptime`.
+      "database_id": "00000000-0000-0000-0000-000000000000",
+      // Local dev uses a local SQLite copy; apply remote migrations with `pnpm db:migrate:remote`.
+      "migrations_dir": "migrations"
+    }
+  ],
+
+  // Dashboard. run_worker_first sends every request through the Worker so the
+  // Access assertion is verified before any asset is served.
+  "assets": {
+    "directory": "./public",
+    "binding": "ASSETS",
+    "run_worker_first": true,
+    "not_found_handling": "single-page-application"
+  },
+
+  // Cloudflare Email Service. Leave this binding in place even if you don't use email;
+  // email is skipped when EMAIL_FROM or EMAIL_TO is empty.
+  "send_email": [{ "name": "EMAIL" }],
+
+  "vars": {
+    // CHANGE ME: public URL of the dashboard (same host as the route above). Used for links in alerts.
+    "DASHBOARD_URL": "https://uptime.example.com",
+
+    // CHANGE ME: Cloudflare Access application protecting that hostname.
+    // ACCESS_TEAM_DOMAIN is https://<your-team-name>.cloudflareaccess.com;
+    // ACCESS_AUD is the application's "Application Audience (AUD) Tag".
+    // While either is empty, every request is refused (fail closed).
+    "ACCESS_TEAM_DOMAIN": "",
+    "ACCESS_AUD": "",
+
+    // Email alerts and the weekly report (optional: leave empty to turn email off).
+    // EMAIL_FROM must be on a domain with Email Routing enabled; EMAIL_TO is a
+    // comma-separated list of verified destination addresses.
+    "EMAIL_FROM": "",
+    "EMAIL_TO": "",
+
+    // ntfy push notifications (optional: leave empty to turn ntfy off). Works with ntfy.sh
+    // or a self-hosted server. If the topic needs a token, store it as the NTFY_TOKEN secret.
+    "NTFY_URL": "https://ntfy.sh",
+    "NTFY_TOPIC": "",
+
+    // IANA time zone for the weekly report week boundaries and for times in alerts and the
+    // dashboard, e.g. "Europe/Brussels" or "America/New_York". Empty means UTC.
+    "TIME_ZONE": "UTC",
+    // Local hour (0-21) at which the weekly report goes out on Mondays. Default 8.
+    "REPORT_HOUR": "8",
+
+    // Workers Free allows 50 external subrequests per invocation (each redirect hop counts).
+    // Raise this on a paid plan (limit 1000) to monitor more sites.
+    "EXTERNAL_SUBREQUEST_LIMIT": "50"
+  }
+}

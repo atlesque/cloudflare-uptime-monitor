@@ -1,0 +1,124 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Uptime Monitor</title>
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'><circle cx='8' cy='8' r='6' fill='%231a7f37'/></svg>" />
+    <link rel="stylesheet" href="/styles.css" />
+    <script type="module" src="/app.js"></script>
+  </head>
+  <body>
+    <header class="topbar">
+      <h1>Uptime Monitor</h1>
+      <div class="summary" id="summary" aria-live="polite"></div>
+      <button class="primary" id="add-button" type="button">Add monitor</button>
+    </header>
+
+    <main>
+      <section class="toolbar" aria-label="Filters">
+        <label>Search <input type="search" id="filter-search" placeholder="Name or URL" autocomplete="off" /></label>
+        <label>Group <select id="filter-group"></select></label>
+        <label
+          >Status
+          <select id="filter-status">
+            <option value="">All</option>
+            <option value="down">Down</option>
+            <option value="up">Up</option>
+            <option value="pending">Pending</option>
+            <option value="maintenance">In maintenance</option>
+          </select>
+        </label>
+        <span class="updated" id="updated"></span>
+      </section>
+
+      <section class="bulkbar" id="bulkbar" hidden aria-label="Selection actions">
+        <strong id="selected-count"></strong>
+        <button type="button" data-bulk="maintenance-notify">Maintenance (notifications on)</button>
+        <button type="button" data-bulk="maintenance-silent">Maintenance (silent)</button>
+        <button type="button" data-bulk="end-maintenance">End maintenance</button>
+        <button type="button" class="danger" data-bulk="delete">Delete…</button>
+        <button type="button" class="link" id="clear-selection">Clear selection</button>
+      </section>
+
+      <div class="table-wrap">
+        <table class="monitors">
+          <thead>
+            <tr>
+              <th class="select"><input type="checkbox" id="select-all" aria-label="Select all filtered monitors" /></th>
+              <th>Monitor</th>
+              <th>Group</th>
+              <th>State</th>
+              <th class="num" title="Rolling 30 days. Parenthesized: including silent maintenance">Uptime 30d</th>
+              <th class="num">Downtime 30d</th>
+              <th>Last check</th>
+              <th class="num">Response</th>
+              <th>Outage since</th>
+              <th class="actions"><span class="visually-hidden">Actions</span></th>
+            </tr>
+          </thead>
+          <tbody id="rows"></tbody>
+        </table>
+        <p class="empty" id="empty" hidden></p>
+      </div>
+    </main>
+
+    <footer class="footer">
+      <p id="channels"></p>
+      <p>
+        Checks run every minute from Cloudflare's network (a single vantage point). Results do not guarantee availability
+        from every region or network. Values in parentheses include time in maintenance without notifications.
+      </p>
+    </footer>
+
+    <!-- Add / edit monitor -->
+    <dialog id="monitor-dialog">
+      <form method="dialog" id="monitor-form">
+        <h2 id="monitor-dialog-title">Add monitor</h2>
+        <label>Name <input name="name" required maxlength="100" /></label>
+        <label>URL <input name="url" type="url" required placeholder="https://example.com/" /></label>
+        <p class="hint" id="url-change-hint" hidden>
+          Changing the URL starts a new observation period: state, incidents and uptime history for this monitor are reset.
+        </p>
+        <label class="checkbox" id="url-change-confirm" hidden>
+          <input type="checkbox" name="confirmUrlChange" /> I understand the history will be reset
+        </label>
+        <label>Group <input name="group" maxlength="50" list="group-options" placeholder="Optional" /></label>
+        <datalist id="group-options"></datalist>
+        <label>Timeout (seconds) <input name="timeout" type="number" min="1" max="30" step="1" value="10" required /></label>
+        <p class="error" id="monitor-error" role="alert"></p>
+        <div class="dialog-actions">
+          <button type="button" data-close>Cancel</button>
+          <button class="primary" type="submit" id="monitor-submit">Save</button>
+        </div>
+      </form>
+    </dialog>
+
+    <!-- Confirmation for destructive and group actions -->
+    <dialog id="confirm-dialog">
+      <form method="dialog">
+        <h2 id="confirm-title"></h2>
+        <div id="confirm-body"></div>
+        <p class="error" id="confirm-error" role="alert"></p>
+        <div class="dialog-actions">
+          <button type="button" data-close>Cancel</button>
+          <button class="primary" type="button" id="confirm-ok"></button>
+        </div>
+      </form>
+    </dialog>
+
+    <!-- Monitor detail -->
+    <dialog id="detail-dialog" class="wide">
+      <div id="detail-body"></div>
+      <div class="dialog-actions"><button type="button" data-close>Close</button></div>
+    </dialog>
+
+    <!-- Check now result -->
+    <dialog id="check-dialog">
+      <div id="check-body"></div>
+      <div class="dialog-actions"><button type="button" data-close>Close</button></div>
+    </dialog>
+
+    <div class="toast" id="toast" role="status" hidden></div>
+  </body>
+</html>

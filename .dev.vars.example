@@ -1,0 +1,11 @@
+# Copy to .dev.vars for local development (`pnpm setup` does this for you).
+# .dev.vars is git-ignored and never deployed. Values here override wrangler.jsonc locally.
+
+# Secret: ntfy publish token. In production set it with `pnpm exec wrangler secret put NTFY_TOKEN`.
+NTFY_TOKEN=
+
+# Local only: clear the Access settings from wrangler.jsonc and skip Access verification.
+# The bypass is ignored whenever ACCESS_TEAM_DOMAIN/ACCESS_AUD are set, as they are in production.
+ACCESS_TEAM_DOMAIN=
+ACCESS_AUD=
+DEV_DISABLE_AUTH=true
