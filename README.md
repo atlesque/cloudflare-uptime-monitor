@@ -26,7 +26,7 @@ You need:
 git clone https://github.com/atlesque/cloudflare-uptime-monitor.git
 cd cloudflare-uptime-monitor
 pnpm install
-pnpm setup                       # creates wrangler.jsonc and .dev.vars from the templates
+pnpm run setup                   # creates wrangler.jsonc and .dev.vars from the templates
 pnpm exec wrangler login         # log in to your Cloudflare account
 ```
 
@@ -95,7 +95,7 @@ and ends for the weekly report, and which zone is used for times in alerts and t
 ### 7. Deploy
 
 ```bash
-pnpm deploy
+pnpm run deploy
 ```
 
 If you use an ntfy access token, store it now. Wrangler prompts for the value, so it never lands in
@@ -146,7 +146,7 @@ Plain settings live under `vars` in `wrangler.jsonc`. Secrets are set with
 git pull
 pnpm install
 pnpm db:migrate:remote           # applies any new migrations
-pnpm deploy
+pnpm run deploy
 ```
 
 Your `wrangler.jsonc` and `.dev.vars` aren't tracked, so pulling never overwrites them. If a new
@@ -164,7 +164,7 @@ release adds a setting, compare your file with `wrangler.example.jsonc`.
   the sender domain needs Email Routing and each recipient must be a verified destination address.
   `pnpm exec wrangler tail` shows delivery errors.
 - **Deploy fails on the route**: the hostname's domain must be a zone in the same Cloudflare account.
-- **Wrangler can't find `wrangler.jsonc`**: run `pnpm setup`.
+- **Wrangler can't find `wrangler.jsonc`**: run `pnpm run setup`.
 
 ## What it does
 
@@ -258,7 +258,7 @@ through pnpm (`pnpm exec wrangler …` or `pnpm wrangler …`), not as a bare `w
 
 ```bash
 pnpm install
-pnpm setup                         # creates wrangler.jsonc and .dev.vars (DEV_DISABLE_AUTH=true skips Access locally)
+pnpm run setup                     # creates wrangler.jsonc and .dev.vars (DEV_DISABLE_AUTH=true skips Access locally)
 pnpm db:migrate:local
 pnpm dev                           # wrangler dev --test-scheduled
 ```

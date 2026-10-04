@@ -1,4 +1,4 @@
-// Template for your wrangler.jsonc. `pnpm setup` copies this file to wrangler.jsonc, which is
+// Template for your wrangler.jsonc. `pnpm run setup` copies this file to wrangler.jsonc, which is
 // git-ignored so your own domain, IDs and addresses never end up in a commit.
 // Edit every value marked CHANGE ME. The README walks through each one.
 {

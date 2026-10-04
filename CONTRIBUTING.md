@@ -5,7 +5,7 @@ dashboard with no build step.
 
 ```bash
 pnpm install
-pnpm setup        # local wrangler.jsonc and .dev.vars (both git-ignored)
+pnpm run setup    # local wrangler.jsonc and .dev.vars (both git-ignored)
 pnpm test
 pnpm typecheck
 ```

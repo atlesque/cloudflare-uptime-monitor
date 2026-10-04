@@ -1,4 +1,4 @@
-# Copy to .dev.vars for local development (`pnpm setup` does this for you).
+# Copy to .dev.vars for local development (`pnpm run setup` does this for you).
 # .dev.vars is git-ignored and never deployed. Values here override wrangler.jsonc locally.
 
 # Secret: ntfy publish token. In production set it with `pnpm exec wrangler secret put NTFY_TOKEN`.
