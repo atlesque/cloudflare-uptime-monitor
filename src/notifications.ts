@@ -4,6 +4,7 @@
 // independently, so one channel's failure never re-sends the other.
 
 import type { Budget } from "./budget";
+import { loadNtfyConfig, type NtfyConfig } from "./settings";
 import { formatDuration, formatTimestamp, MINUTE } from "./time";
 
 export type NotificationKind = "down" | "up" | "still_down";
@@ -45,15 +46,10 @@ export function emailConfigured(env: Env): boolean {
   return Boolean(env.EMAIL && env.EMAIL_FROM && emailRecipients(env).length > 0);
 }
 
-// ntfy settings are Wrangler secrets, so they are undefined until set with `wrangler secret put`.
-const DEFAULT_NTFY_URL = "https://ntfy.sh";
-
-export function ntfyConfigured(env: Env): boolean {
-  return Boolean(env.NTFY_TOPIC);
-}
-
-function ntfyUrl(env: Env): string {
-  return (env.NTFY_URL || DEFAULT_NTFY_URL).replace(/\/$/, "");
+// ntfy comes from the dashboard's settings once saved there, else from the Wrangler secrets
+// (see settings.ts).
+export async function ntfyConfigured(env: Env): Promise<boolean> {
+  return (await loadNtfyConfig(env)).topic !== "";
 }
 
 export async function sendEmail(env: Env, message: { subject: string; html: string; text: string }) {
@@ -138,7 +134,7 @@ ${rows
   return { subject: `[${tag}] ${title}`, html, text };
 }
 
-export function buildNtfy(kind: NotificationKind, p: NotificationPayload, env: Env) {
+export function buildNtfy(kind: NotificationKind, p: NotificationPayload, env: Env, topic: string) {
   const lines = [p.url];
   if (kind === "up") {
     if (p.outageStartedAt !== null) lines.push(`Down for ${formatDuration(p.at - p.outageStartedAt)}`);
@@ -150,7 +146,7 @@ export function buildNtfy(kind: NotificationKind, p: NotificationPayload, env: E
   }
   lines.push(formatTimestamp(p.at));
   return {
-    topic: env.NTFY_TOPIC,
+    topic,
     title: headline(kind, p),
     message: lines.join("\n"),
     priority: kind === "up" ? 3 : 5,
@@ -159,11 +155,11 @@ export function buildNtfy(kind: NotificationKind, p: NotificationPayload, env: E
   };
 }
 
-async function sendNtfy(env: Env, body: object) {
+export async function sendNtfy(config: NtfyConfig, body: object) {
   const headers: Record<string, string> = { "Content-Type": "application/json" };
-  if (env.NTFY_TOKEN) headers.Authorization = `Bearer ${env.NTFY_TOKEN}`;
+  if (config.token) headers.Authorization = `Bearer ${config.token}`;
   // JSON publishing goes to the server root, with the topic in the body.
-  const res = await fetch(ntfyUrl(env) + "/", {
+  const res = await fetch(config.url + "/", {
     method: "POST",
     headers,
     body: JSON.stringify(body),
@@ -207,6 +203,8 @@ export async function dispatchNotifications(env: Env, now: number, budget: Budge
   )
     .bind(MAX_ATTEMPTS, BATCH_LIMIT)
     .all<NotificationRow>();
+  if (results.length === 0) return;
+  const ntfy = await loadNtfyConfig(env);
 
   for (const row of results) {
     const payload = JSON.parse(row.payload) as NotificationPayload;
@@ -215,7 +213,7 @@ export async function dispatchNotifications(env: Env, now: number, budget: Budge
       const attempts = row[`${channel}_attempts`];
       if (!isDue(status, attempts, row[`${channel}_claimed_at`], now)) continue;
 
-      const configured = channel === "email" ? emailConfigured(env) : ntfyConfigured(env);
+      const configured = channel === "email" ? emailConfigured(env) : ntfy.topic !== "";
       if (!configured) {
         await env.DB.prepare(
           `UPDATE notifications SET ${channel}_status = 'skipped', ${channel}_error = 'Channel not configured'
@@ -239,7 +237,7 @@ export async function dispatchNotifications(env: Env, now: number, budget: Budge
 
       try {
         if (channel === "email") await sendEmail(env, buildEmail(row.kind, payload, env));
-        else await sendNtfy(env, buildNtfy(row.kind, payload, env));
+        else await sendNtfy(ntfy, buildNtfy(row.kind, payload, env, ntfy.topic));
         await env.DB.prepare(
           `UPDATE notifications SET ${channel}_status = 'sent', ${channel}_error = NULL WHERE id = ?`,
         )

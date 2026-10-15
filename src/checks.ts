@@ -4,7 +4,12 @@
 import type { Budget } from "./budget";
 import type { MaintenanceMode, NotificationKind, NotificationPayload } from "./notifications";
 import { probe, type ProbeResult } from "./probe";
+import { loadCheckSettings } from "./settings";
 import { applyCheck, type MonitorState, type Transition } from "./state";
+
+// The scheduler fires every minute but not at exact multiples of a minute, so a monitor
+// counts as due slightly early rather than skipping a whole extra run.
+const DUE_SLACK_MS = 30_000;
 
 // Workers allow 6 simultaneous outbound connections; further fetches queue
 // inside the runtime while their timeout is already running. Limiting here
@@ -23,6 +28,8 @@ interface CheckRow {
   maintenance_mode: MaintenanceMode;
   check_token: string | null;
   outage_started_at: number | null;
+  last_checked_at: number | null;
+  interval_minutes: number;
 }
 
 export interface CheckOutcome {
@@ -33,14 +40,22 @@ export interface CheckOutcome {
 }
 
 export async function runChecks(env: Env, budget: Budget, now: () => number = Date.now): Promise<CheckOutcome[]> {
+  const { defaultIntervalMinutes } = await loadCheckSettings(env);
   // Least recently checked first, so monitors deferred by the budget go first next time.
-  const { results: monitors } = await env.DB.prepare(
+  const { results: rows } = await env.DB.prepare(
     `SELECT m.id, m.name, m.url, m.group_name, m.timeout_ms, m.state, m.consecutive_failures,
-            m.consecutive_successes, m.maintenance_mode, m.check_token, i.started_at AS outage_started_at
+            m.consecutive_successes, m.maintenance_mode, m.check_token, i.started_at AS outage_started_at,
+            m.last_checked_at, COALESCE(m.check_interval_minutes, ?) AS interval_minutes
        FROM monitors m
        LEFT JOIN incidents i ON i.monitor_id = m.id AND i.ended_at IS NULL
       ORDER BY m.last_checked_at IS NOT NULL, m.last_checked_at, m.id`,
-  ).all<CheckRow>();
+  )
+    .bind(defaultIntervalMinutes)
+    .all<CheckRow>();
+  const startedAt = now();
+  const monitors = rows.filter(
+    (m) => m.last_checked_at === null || startedAt - m.last_checked_at >= m.interval_minutes * 60_000 - DUE_SLACK_MS,
+  );
   if (monitors.length === 0) return [];
 
   const results = await mapWithConcurrency(monitors, PROBE_CONCURRENCY, (m) => probe(m.url, m.timeout_ms, budget));
