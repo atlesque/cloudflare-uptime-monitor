@@ -10,6 +10,7 @@ const open = defineModel<boolean>("open", { required: true });
     v-model:open="open"
     :title="`Check now: ${monitor?.name ?? ''}`"
     description="Diagnostic only. This result does not change the monitor's state, incidents, uptime or notifications."
+    :ui="{ content: 'sm:max-w-2xl' }"
   >
     <template #body>
       <div v-if="monitor && result" class="space-y-4">
@@ -35,6 +36,7 @@ const open = defineModel<boolean>("open", { required: true });
           <dt class="text-muted">Checked at</dt>
           <dd>{{ formatFullTime(result.checkedAt) }}</dd>
         </dl>
+        <ResponseDiagnostics v-if="result.diagnostics" :diagnostics="result.diagnostics" :diagnosis="result.diagnosis" />
       </div>
     </template>
     <template #footer>

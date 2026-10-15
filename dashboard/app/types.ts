@@ -34,6 +34,8 @@ export interface Monitor {
   maintenanceMode: MaintenanceMode;
   maintenanceStartedAt: number | null;
   currentOutageStartedAt: number | null;
+  /** Set while the site's Retry-After holds off the next check. */
+  nextCheckAfter: number | null;
   lastCheck: LastCheck | null;
   metrics30d: Metrics;
 }
@@ -51,6 +53,42 @@ export interface Incident {
 
 export interface MonitorDetail extends Monitor {
   incidents: Incident[];
+  failures: FailureSummary[];
+}
+
+export interface Diagnosis {
+  source: string | null;
+  blocked: boolean;
+  reference: string | null;
+  signals: string[];
+}
+
+export interface ProbeDiagnostics {
+  url: string;
+  redirects: { url: string; status: number; location: string }[];
+  headers: [string, string][] | null;
+  body: string | null;
+  bodyTruncated: boolean;
+}
+
+export interface FailureSummary {
+  id: number;
+  checkedAt: number;
+  status: number | null;
+  error: string | null;
+  source: string | null;
+  blocked: boolean;
+  reference: string | null;
+}
+
+export interface FailedCheck {
+  id: number;
+  checkedAt: number;
+  status: number | null;
+  error: string | null;
+  durationMs: number;
+  diagnostics: ProbeDiagnostics;
+  diagnosis: Diagnosis;
 }
 
 export interface CheckResult {
@@ -59,6 +97,8 @@ export interface CheckResult {
   error: string | null;
   durationMs: number;
   checkedAt: number;
+  diagnostics?: ProbeDiagnostics;
+  diagnosis: Diagnosis | null;
 }
 
 export interface Me {

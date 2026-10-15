@@ -2,6 +2,7 @@
 
 import { HttpError, readJsonObject } from "./http";
 import { setMaintenance } from "./maintenance";
+import { diagnose } from "./diagnosis";
 import { computeMetrics, maintenanceOverlap, type IncidentSpan, type MaintenanceSpan } from "./metrics";
 import type { MaintenanceMode } from "./notifications";
 import { probe } from "./probe";
@@ -32,6 +33,20 @@ interface MonitorRow {
   maintenance_mode: MaintenanceMode;
   outage_started_at: number | null;
   maintenance_started_at: number | null;
+  next_check_after: number | null;
+}
+
+interface FailureRow {
+  id: number;
+  checked_at: number;
+  url: string;
+  status: number | null;
+  error: string | null;
+  duration_ms: number;
+  redirects: string;
+  headers: string | null;
+  body: string | null;
+  body_truncated: number;
 }
 
 interface IncidentRow {
@@ -52,7 +67,7 @@ interface MaintenanceRow {
 const SELECT_MONITORS = `
   SELECT m.id, m.name, m.url, m.group_name, m.timeout_ms, m.check_interval_minutes, m.created_at, m.observed_since, m.state,
          m.last_checked_at, m.last_status, m.last_error, m.last_duration_ms, m.maintenance_mode,
-         i.started_at AS outage_started_at, p.started_at AS maintenance_started_at
+         m.next_check_after, i.started_at AS outage_started_at, p.started_at AS maintenance_started_at
     FROM monitors m
     LEFT JOIN incidents i ON i.monitor_id = m.id AND i.ended_at IS NULL
     LEFT JOIN maintenance_periods p ON p.monitor_id = m.id AND p.ended_at IS NULL`;
@@ -108,6 +123,8 @@ function toApi(row: MonitorRow, history: { incidents: IncidentRow[]; maintenance
     maintenanceMode: row.maintenance_mode,
     maintenanceStartedAt: row.maintenance_started_at,
     currentOutageStartedAt: row.outage_started_at,
+    /** Set while the site's Retry-After holds off the next check. */
+    nextCheckAfter: row.next_check_after !== null && row.next_check_after > now ? row.next_check_after : null,
     lastCheck:
       row.last_checked_at === null
         ? null
@@ -131,9 +148,12 @@ export async function listMonitors(env: Env, now = Date.now()) {
 }
 
 export async function getMonitor(env: Env, id: number, now = Date.now()) {
-  const [row, history] = await Promise.all([
+  const [row, history, failures] = await Promise.all([
     env.DB.prepare(`${SELECT_MONITORS} WHERE m.id = ?`).bind(id).first<MonitorRow>(),
     loadHistory(env, now - ROLLING_WINDOW_MS, id),
+    env.DB.prepare(`SELECT * FROM check_failures WHERE monitor_id = ? ORDER BY checked_at DESC, id DESC`)
+      .bind(id)
+      .all<FailureRow>(),
   ]);
   if (!row) throw new HttpError(404, "Monitor not found");
   const h = history(id);
@@ -153,6 +173,34 @@ export async function getMonitor(env: Env, id: number, now = Date.now()) {
         notifyMaintenanceMs: overlap.notifyMs,
       };
     }),
+    failures: failures.results.map(({ id, checked_at, status, error, headers, body }) => {
+      const d = diagnose(status, headers ? JSON.parse(headers) : null, body);
+      return { id, checkedAt: checked_at, status, error, source: d.source, blocked: d.blocked, reference: d.reference };
+    }),
+  };
+}
+
+/** One failed check with the full response that was recorded. */
+export async function getFailure(env: Env, monitorId: number, failureId: number) {
+  const row = await env.DB.prepare(`SELECT * FROM check_failures WHERE id = ? AND monitor_id = ?`)
+    .bind(failureId, monitorId)
+    .first<FailureRow>();
+  if (!row) throw new HttpError(404, "Failed check not found");
+  const headers: [string, string][] | null = row.headers ? JSON.parse(row.headers) : null;
+  return {
+    id: row.id,
+    checkedAt: row.checked_at,
+    status: row.status,
+    error: row.error,
+    durationMs: row.duration_ms,
+    diagnostics: {
+      url: row.url,
+      redirects: JSON.parse(row.redirects),
+      headers,
+      body: row.body,
+      bodyTruncated: row.body_truncated === 1,
+    },
+    diagnosis: diagnose(row.status, headers, row.body),
   };
 }
 
@@ -270,10 +318,12 @@ export async function updateMonitor(env: Env, id: number, request: Request, now 
       "last_status = NULL",
       "last_error = NULL",
       "last_duration_ms = NULL",
+      "next_check_after = NULL",
     );
     params.push(newUrl, crypto.randomUUID(), now);
     statements.push(
       env.DB.prepare(`DELETE FROM incidents WHERE monitor_id = ?`).bind(id),
+      env.DB.prepare(`DELETE FROM check_failures WHERE monitor_id = ?`).bind(id),
       env.DB.prepare(`DELETE FROM maintenance_periods WHERE monitor_id = ? AND ended_at IS NOT NULL`).bind(id),
       env.DB.prepare(`UPDATE maintenance_periods SET started_at = ? WHERE monitor_id = ? AND ended_at IS NULL`).bind(
         now,
@@ -301,7 +351,8 @@ export async function checkNow(env: Env, id: number) {
   if (!m) throw new HttpError(404, "Monitor not found");
   const checkedAt = Date.now();
   const result = await probe(m.url, m.timeout_ms);
-  return { checkedAt, ...result };
+  const d = result.diagnostics;
+  return { checkedAt, ...result, diagnosis: d ? diagnose(result.status, d.headers, d.body) : null };
 }
 
 export async function setMonitorMaintenance(env: Env, id: number, request: Request, now = Date.now()) {

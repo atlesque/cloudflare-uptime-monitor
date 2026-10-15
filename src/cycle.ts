@@ -40,6 +40,7 @@ export async function pruneHistory(env: Env, now: number): Promise<void> {
     env.DB.prepare(`DELETE FROM incidents WHERE ended_at IS NOT NULL AND ended_at < ?`).bind(cutoff),
     env.DB.prepare(`DELETE FROM maintenance_periods WHERE ended_at IS NOT NULL AND ended_at < ?`).bind(cutoff),
     env.DB.prepare(`DELETE FROM notifications WHERE created_at < ?`).bind(cutoff),
+    env.DB.prepare(`DELETE FROM check_failures WHERE checked_at < ?`).bind(cutoff),
     env.DB.prepare(`DELETE FROM weekly_reports WHERE created_at < ?`).bind(now - REPORT_RETENTION_MS),
   ]);
 }

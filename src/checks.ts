@@ -16,6 +16,9 @@ const DUE_SLACK_MS = 30_000;
 // keeps each probe's timeout measuring only its own request.
 const PROBE_CONCURRENCY = 6;
 
+/** Failed-check diagnostics kept per monitor (most recent first). */
+export const FAILURES_KEPT = 20;
+
 interface CheckRow {
   id: number;
   name: string;
@@ -30,6 +33,7 @@ interface CheckRow {
   outage_started_at: number | null;
   last_checked_at: number | null;
   interval_minutes: number;
+  next_check_after: number | null;
 }
 
 export interface CheckOutcome {
@@ -45,7 +49,7 @@ export async function runChecks(env: Env, budget: Budget, now: () => number = Da
   const { results: rows } = await env.DB.prepare(
     `SELECT m.id, m.name, m.url, m.group_name, m.timeout_ms, m.state, m.consecutive_failures,
             m.consecutive_successes, m.maintenance_mode, m.check_token, i.started_at AS outage_started_at,
-            m.last_checked_at, COALESCE(m.check_interval_minutes, ?) AS interval_minutes
+            m.last_checked_at, COALESCE(m.check_interval_minutes, ?) AS interval_minutes, m.next_check_after
        FROM monitors m
        LEFT JOIN incidents i ON i.monitor_id = m.id AND i.ended_at IS NULL
       ORDER BY m.last_checked_at IS NOT NULL, m.last_checked_at, m.id`,
@@ -54,7 +58,9 @@ export async function runChecks(env: Env, budget: Budget, now: () => number = Da
     .all<CheckRow>();
   const startedAt = now();
   const monitors = rows.filter(
-    (m) => m.last_checked_at === null || startedAt - m.last_checked_at >= m.interval_minutes * 60_000 - DUE_SLACK_MS,
+    (m) =>
+      (m.next_check_after === null || startedAt >= m.next_check_after) &&
+      (m.last_checked_at === null || startedAt - m.last_checked_at >= m.interval_minutes * 60_000 - DUE_SLACK_MS),
   );
   if (monitors.length === 0) return [];
 
@@ -83,7 +89,7 @@ export async function runChecks(env: Env, budget: Budget, now: () => number = Da
       env.DB.prepare(
         `UPDATE monitors
             SET state = ?, consecutive_failures = ?, consecutive_successes = ?, check_token = ?,
-                last_checked_at = ?, last_status = ?, last_error = ?, last_duration_ms = ?
+                last_checked_at = ?, last_status = ?, last_error = ?, last_duration_ms = ?, next_check_after = ?
           WHERE id = ? AND url = ? AND check_token IS ?`,
       ).bind(
         next.state,
@@ -94,11 +100,16 @@ export async function runChecks(env: Env, budget: Budget, now: () => number = Da
         result.status,
         result.error,
         result.durationMs,
+        result.retryAfterMs ? checkedAt + result.retryAfterMs : null,
         m.id,
         m.url,
         m.check_token,
       ),
     );
+    if (result.retryAfterMs) {
+      console.warn(`Monitor ${m.id} sent Retry-After; next check in ${Math.round(result.retryAfterMs / 1000)} s`);
+    }
+    if (result.diagnostics) statements.push(...failureInserts(env, m.id, checkedAt, result, token));
     if (next.transition === "down") {
       statements.push(
         env.DB.prepare(
@@ -135,6 +146,34 @@ export async function runChecks(env: Env, budget: Budget, now: () => number = Da
 
   if (statements.length > 0) await env.DB.batch(statements);
   return outcomes;
+}
+
+/** Stores a failed check's diagnostics and drops the oldest beyond FAILURES_KEPT. */
+function failureInserts(env: Env, monitorId: number, checkedAt: number, result: ProbeResult, token: string) {
+  const d = result.diagnostics!;
+  return [
+    env.DB.prepare(
+      `INSERT INTO check_failures
+         (monitor_id, checked_at, url, status, error, duration_ms, redirects, headers, body, body_truncated)
+       SELECT id, ?, ?, ?, ?, ?, ?, ?, ?, ? FROM monitors WHERE id = ? AND check_token = ?`,
+    ).bind(
+      checkedAt,
+      d.url,
+      result.status,
+      result.error,
+      result.durationMs,
+      JSON.stringify(d.redirects),
+      d.headers ? JSON.stringify(d.headers) : null,
+      d.body,
+      d.bodyTruncated ? 1 : 0,
+      monitorId,
+      token,
+    ),
+    env.DB.prepare(
+      `DELETE FROM check_failures WHERE monitor_id = ?1 AND id NOT IN
+         (SELECT id FROM check_failures WHERE monitor_id = ?1 ORDER BY checked_at DESC, id DESC LIMIT ?2)`,
+    ).bind(monitorId, FAILURES_KEPT),
+  ];
 }
 
 /**

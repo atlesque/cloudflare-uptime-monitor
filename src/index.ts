@@ -6,6 +6,7 @@ import {
   checkNow,
   createMonitor,
   deleteMonitor,
+  getFailure,
   getMonitor,
   listMonitors,
   setMonitorMaintenance,
@@ -56,6 +57,12 @@ async function route(request: Request, env: Env, url: URL): Promise<Response> {
   if (path === "/api/groups" && method === "GET") return Response.json(await listGroups(env));
   if (path === "/api/groups/rename" && method === "POST") return Response.json(await renameGroup(env, request));
   if (path === "/api/groups/remove" && method === "POST") return Response.json(await removeGroup(env, request));
+
+  const failure = /^\/api\/monitors\/(\d+)\/failures\/(\d+)$/.exec(path);
+  if (failure) {
+    if (method === "GET") return Response.json(await getFailure(env, Number(failure[1]), Number(failure[2])));
+    throw new HttpError(405, "Method not allowed");
+  }
 
   const match = /^\/api\/monitors\/(\d+)(\/check|\/maintenance)?$/.exec(path);
   if (match) {
