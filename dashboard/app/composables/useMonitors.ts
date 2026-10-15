@@ -1,4 +1,4 @@
-import type { Me, Monitor, Settings } from "~/types";
+import type { DayUptime, Me, Monitor, Settings } from "~/types";
 
 const REFRESH_MS = 30_000;
 
@@ -27,6 +27,22 @@ export function useMonitors() {
   );
 
   return { monitors, loaded, updatedAt, refreshError, refresh, groups };
+}
+
+/** Daily uptime across all monitors for the last 90 days, for the overview bar. */
+export function useUptime() {
+  const days = useState<DayUptime[] | null>("uptime", () => null);
+  const loaded = useState("uptime-loaded", () => false);
+  async function load() {
+    try {
+      days.value = (await api<{ days: DayUptime[] }>("/api/uptime")).days;
+    } catch {
+      // Keep the last good bar; the monitor list reports refresh errors.
+    } finally {
+      loaded.value = true;
+    }
+  }
+  return { days, loaded, load };
 }
 
 /** Starts the auto refresh. `paused` skips ticks, e.g. while a dialog is open. */

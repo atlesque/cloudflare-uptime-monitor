@@ -231,7 +231,8 @@ an authentication error, create an API token from the *Edit Cloudflare Workers* 
 - **Dashboard.** Built with Nuxt 4 and Nuxt UI, with light and dark themes. A Settings page with tabs
   for notifications (ntfy, with a test notification), monitors (the default check interval) and
   groups (add, rename, merge or remove a group, and pick its monitors). Status cards that
-  double as filters, a table (a card list on phones) with search and filters, explicit and "all
+  double as filters, a 90-day uptime bar across all monitors (one bar per day, with the outages of each day),
+  a table (a card list on phones) with search and filters, explicit and "all
   filtered" selection, bulk actions with confirmation, add/edit (a URL change must be confirmed
   and resets history), diagnostics-only *Check now*, and a detail panel with per-monitor incident
   history.
@@ -252,6 +253,7 @@ site is reachable from every region or network. Nothing independently monitors t
 | `src/metrics.ts` | Operational/inclusive uptime over a window |
 | `src/report.ts`, `src/time.ts` | Weekly report scheduling (configurable time zone) and rendering |
 | `src/monitors.ts` | Monitor API: list, detail, create, edit, Check now, maintenance, bulk |
+| `src/uptime.ts` | Daily uptime across all monitors for the dashboard's 90-day bar |
 | `src/settings.ts`, `src/groups.ts` | Settings saved from the dashboard (ntfy, check interval) and group management |
 | `src/auth.ts` | Cloudflare Access JWT verification |
 | `src/url.ts`, `src/budget.ts` | Public-URL validation, Free-plan subrequest budget |

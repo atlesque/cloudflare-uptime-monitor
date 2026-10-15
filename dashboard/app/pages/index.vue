@@ -3,6 +3,7 @@ import type { BulkAction, BulkResult, CheckResult, ConfirmOptions, MaintenanceMo
 
 const toast = useToast();
 const { monitors, loaded, updatedAt, refreshError, refresh, groups } = useMonitors();
+const { days: uptimeDays, loaded: uptimeLoaded, load: loadUptime } = useUptime();
 const { me, load: loadMe } = useMe();
 const { settings, load: loadSettings } = useSettings();
 const now = useTicker();
@@ -22,7 +23,8 @@ const detailId = ref<number | null>(null);
 const detail = useTemplateRef("detail");
 
 // Don't re-render the table under an open dialog; the next tick catches up.
-useAutoRefresh(refresh, () => formOpen.value || confirmOpen.value || checkOpen.value || detailOpen.value);
+const refreshAll = () => Promise.all([refresh(), loadUptime()]).then(() => {});
+useAutoRefresh(refreshAll, () => formOpen.value || confirmOpen.value || checkOpen.value || detailOpen.value);
 
 const notify = (title: string, color: "success" | "error" | "neutral" = "success") =>
   toast.add({ title, color, icon: color === "error" ? "i-lucide-circle-alert" : "i-lucide-circle-check" });
@@ -34,7 +36,7 @@ function openForm(monitor: Monitor | null) {
 
 async function onSaved(message: string) {
   notify(message);
-  await refresh();
+  await refreshAll();
   if (detailOpen.value) await detail.value?.reload();
 }
 
@@ -90,7 +92,7 @@ async function setMaintenance(monitor: Monitor, mode: MaintenanceMode) {
         ? `Ended maintenance for ${monitor.name}`
         : `${monitor.name} is now in ${MAINTENANCE_LABELS[mode].toLowerCase()}`,
     );
-    await refresh();
+    await refreshAll();
   } catch (err) {
     notify(errorMessage(err), "error");
   }
@@ -108,7 +110,7 @@ function deleteMonitor(monitor: Monitor) {
       await api(`/api/monitors/${monitor.id}?confirm=true`, { method: "DELETE" });
       notify(`Deleted ${monitor.name}`);
       if (detailId.value === monitor.id) detailOpen.value = false;
-      await refresh();
+      await refreshAll();
     },
   });
 }
@@ -123,7 +125,7 @@ function bulk(action: BulkAction, selected: Monitor[], clear: () => void) {
     const result = await api<BulkResult>("/api/monitors/bulk", { method: "POST", body: { ...body, ids, confirm: true } });
     clear();
     notify(done(result));
-    await refresh();
+    await refreshAll();
   };
 
   switch (action) {
@@ -164,7 +166,7 @@ function bulk(action: BulkAction, selected: Monitor[], clear: () => void) {
 
 onMounted(async () => {
   await Promise.all([loadMe(), loadSettings()]);
-  await refresh();
+  await refreshAll();
 });
 </script>
 
@@ -190,6 +192,8 @@ onMounted(async () => {
     />
 
     <StatCards v-model:status="status" :monitors="monitors" :loading="!loaded" />
+
+    <UptimeBar :days="uptimeDays" :monitors="monitors" :loading="!loaded || !uptimeLoaded" />
 
     <MonitorsTable
       v-model:status="status"

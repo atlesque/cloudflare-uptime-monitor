@@ -21,9 +21,16 @@ const fullFormat = computed(
   () => new Intl.DateTimeFormat("en-GB", { timeZone: timeZone.value, dateStyle: "medium", timeStyle: "long" }),
 );
 
+const dayFormat = computed(
+  () => new Intl.DateTimeFormat("en-GB", { timeZone: timeZone.value, weekday: "short", day: "numeric", month: "short", year: "numeric" }),
+);
+
 export const formatTime = (ms: number | null | undefined) => (ms == null ? "—" : shortFormat.value.format(new Date(ms)));
 export const formatFullTime = (ms: number | null | undefined) =>
   ms == null ? "—" : fullFormat.value.format(new Date(ms));
+
+/** e.g. "Tue, 29 Sept 2026" */
+export const formatDay = (ms: number) => dayFormat.value.format(new Date(ms));
 
 export function formatDuration(ms: number) {
   const s = Math.max(0, Math.round(ms / 1000));
