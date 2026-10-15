@@ -166,6 +166,21 @@ Upgrading from a version that had `NTFY_URL` and `NTFY_TOPIC` under `vars`: dele
 `wrangler.jsonc`, deploy, then set them with `wrangler secret put` as in step 7. Wrangler refuses a
 secret with the same name as a var that is still deployed.
 
+### Deploy automatically from GitHub
+
+If you keep your copy on GitHub, CI can deploy every push to `main` once the tests pass: it
+applies new D1 migrations and runs `pnpm run deploy`. Add these repository secrets under
+**Settings → Secrets and variables → Actions**:
+
+| Secret | Value |
+| --- | --- |
+| `CLOUDFLARE_API_TOKEN` | An API token from the *Edit Cloudflare Workers* template, with **Account → D1 → Edit** added |
+| `CLOUDFLARE_ACCOUNT_ID` | Your Cloudflare account ID |
+| `WRANGLER_CONFIG` | The full contents of your `wrangler.jsonc` |
+
+Without them the deploy job is skipped. When you change your `wrangler.jsonc`, update
+`WRANGLER_CONFIG` too. ntfy secrets stay on the Worker and are not touched by a deploy.
+
 ## Troubleshooting
 
 - **Every request returns "Cloudflare Access is not configured"**: `ACCESS_TEAM_DOMAIN` or
