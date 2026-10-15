@@ -11,6 +11,7 @@
     "dev:dashboard": "pnpm --filter dashboard dev",
     "build": "pnpm --filter dashboard generate",
     "deploy": "pnpm build && wrangler deploy",
+    "deploy:ci": "node scripts/write-config.mjs && pnpm db:migrate:remote && pnpm run deploy",
     "pretest": "pnpm build",
     "test": "vitest run",
     "typecheck": "tsc --noEmit && pnpm --filter dashboard typecheck",
