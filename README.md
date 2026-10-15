@@ -186,6 +186,20 @@ ntfy secrets stay on the Worker and aren't touched by a deploy. If the migration
 an authentication error, create an API token from the *Edit Cloudflare Workers* template with
 **Account → D1 → Edit** added, and select it as the build's API token.
 
+Workers Builds can wait several minutes for a build machine. To deploy from GitHub Actions instead
+(usually live in 1 to 2 minutes), add these in your repository under **Settings → Secrets and
+variables → Actions**, then disconnect the repository under the Worker's **Settings → Builds** so
+each push deploys once:
+
+| Name | Kind | Value |
+| --- | --- | --- |
+| `CLOUDFLARE_API_TOKEN` | Secret | A token from the *Edit Cloudflare Workers* template with **Account → D1 → Edit** added |
+| `WRANGLER_CONFIG` | Secret | The full contents of your `wrangler.jsonc` |
+| `DEPLOY_WITH_ACTIONS` | Variable | `true` |
+
+The `Deploy` workflow runs the same `pnpm run deploy:ci` on every push to `main`, and can be run by
+hand from the **Actions** tab.
+
 ## Troubleshooting
 
 - **Every request returns "Cloudflare Access is not configured"**: `ACCESS_TEAM_DOMAIN` or
