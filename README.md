@@ -168,18 +168,23 @@ secret with the same name as a var that is still deployed.
 
 ### Deploy automatically from GitHub
 
-If you keep your copy on GitHub, CI can deploy every push to `main` once the tests pass: it
-applies new D1 migrations and runs `pnpm run deploy`. Add these repository secrets under
-**Settings → Secrets and variables → Actions**:
+Cloudflare can deploy every push to `main` with Workers Builds. In the Cloudflare dashboard, open
+**Workers & Pages**, select your Worker, then **Settings → Builds → Connect**, and choose your
+repository with these settings:
 
-| Secret | Value |
+| Setting | Value |
 | --- | --- |
-| `CLOUDFLARE_API_TOKEN` | An API token from the *Edit Cloudflare Workers* template, with **Account → D1 → Edit** added |
-| `CLOUDFLARE_ACCOUNT_ID` | Your Cloudflare account ID |
-| `WRANGLER_CONFIG` | The full contents of your `wrangler.jsonc` |
+| Branch | `main` |
+| Build command | *(leave empty)* |
+| Deploy command | `pnpm run deploy:ci` |
+| Non-production branch builds | Off |
+| Build secret `WRANGLER_CONFIG` | The full contents of your `wrangler.jsonc` |
 
-Without them the deploy job is skipped. When you change your `wrangler.jsonc`, update
-`WRANGLER_CONFIG` too. ntfy secrets stay on the Worker and are not touched by a deploy.
+`deploy:ci` writes `wrangler.jsonc` from `WRANGLER_CONFIG` (the file is git-ignored), applies new
+D1 migrations and deploys. When you change your `wrangler.jsonc`, update the build secret too.
+ntfy secrets stay on the Worker and aren't touched by a deploy. If the migration step fails with
+an authentication error, create an API token from the *Edit Cloudflare Workers* template with
+**Account → D1 → Edit** added, and select it as the build's API token.
 
 ## Troubleshooting
 
