@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import type { Monitor, MonitorDetail } from "~/types";
+import type { FailedCheck, Monitor, MonitorDetail } from "~/types";
 
 const props = defineProps<{ monitorId: number | null; checking: boolean; defaultInterval: number | null }>();
 const open = defineModel<boolean>("open", { required: true });
@@ -27,13 +27,36 @@ watch(
   () => [open.value, props.monitorId] as const,
   ([isOpen, id], previous) => {
     if (!isOpen) return;
-    if (previous && id !== previous[1]) detail.value = null;
+    if (previous && id !== previous[1]) {
+      detail.value = null;
+      expandedFailure.value = null;
+      failureCache.clear();
+    }
     load();
   },
   { immediate: true },
 );
 
 defineExpose({ reload: load });
+
+// Full responses of failed checks load on demand; they can be up to 16 KB each.
+const expandedFailure = ref<number | null>(null);
+const failureCache = reactive(new Map<number, FailedCheck>());
+const failureError = ref<string | null>(null);
+async function toggleFailure(id: number) {
+  failureError.value = null;
+  if (expandedFailure.value === id) {
+    expandedFailure.value = null;
+    return;
+  }
+  expandedFailure.value = id;
+  if (failureCache.has(id) || props.monitorId == null) return;
+  try {
+    failureCache.set(id, await api<FailedCheck>(`/api/monitors/${props.monitorId}/failures/${id}`));
+  } catch (err) {
+    failureError.value = errorMessage(err);
+  }
+}
 
 function maintenanceText(silentMs: number, notifyMs: number) {
   const parts = [];
@@ -167,7 +190,50 @@ function maintenanceText(silentMs: number, notifyMs: number) {
               <span v-if="detail.lastCheck.durationMs != null" class="text-muted"> · {{ detail.lastCheck.durationMs }} ms</span>
             </dd>
             <dd v-else class="text-muted">Not checked yet</dd>
+            <template v-if="detail.nextCheckAfter">
+              <dt class="text-muted">Next check</dt>
+              <dd>
+                Not before {{ formatTime(detail.nextCheckAfter) }}
+                <span class="text-muted">· the site asked to wait (Retry-After)</span>
+              </dd>
+            </template>
           </dl>
+        </section>
+
+        <section>
+          <h3 class="mb-2 text-sm font-medium text-muted">Failed checks</h3>
+          <div v-if="detail.failures.length === 0" class="rounded-lg border border-dashed border-default p-4 text-sm text-muted">
+            No failed checks recorded. The response of each failed check is kept here (the last 20).
+          </div>
+          <ul v-else class="divide-y divide-default rounded-lg border border-default">
+            <li v-for="failure in detail.failures" :key="failure.id">
+              <button
+                type="button"
+                class="flex w-full flex-wrap items-center gap-2 px-3 py-2 text-start text-sm hover:bg-elevated/50"
+                :aria-expanded="expandedFailure === failure.id"
+                @click="toggleFailure(failure.id)"
+              >
+                <UIcon
+                  name="i-lucide-chevron-right"
+                  class="size-4 shrink-0 text-muted transition-transform"
+                  :class="expandedFailure === failure.id && 'rotate-90'"
+                />
+                <span class="text-highlighted">{{ formatTime(failure.checkedAt) }}</span>
+                <span class="font-mono text-xs text-error">{{ failure.error }}</span>
+                <UBadge v-if="failure.blocked" color="warning" variant="subtle" size="sm">Blocked by {{ failure.source }}</UBadge>
+                <UBadge v-else-if="failure.source" color="neutral" variant="soft" size="sm">{{ failure.source }}</UBadge>
+              </button>
+              <div v-if="expandedFailure === failure.id" class="border-t border-default p-3">
+                <UAlert v-if="failureError" color="error" variant="subtle" :description="failureError" />
+                <ResponseDiagnostics
+                  v-else-if="failureCache.get(failure.id)"
+                  :diagnostics="failureCache.get(failure.id)!.diagnostics"
+                  :diagnosis="failureCache.get(failure.id)!.diagnosis"
+                />
+                <USkeleton v-else class="h-24 w-full" />
+              </div>
+            </li>
+          </ul>
         </section>
 
         <section>

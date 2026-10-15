@@ -205,7 +205,14 @@ an authentication error, create an API token from the *Edit Cloudflare Workers* 
 - **Checks every minute by default.** The interval is set on the Settings page (1 to 60 minutes)
   and can be overridden per monitor. Each check is a `GET` request. Up to 5 redirects are followed,
   including HTTP→HTTPS, and every hop is re-checked against the public-target rules. The final
-  response counts: `2xx`/`3xx` within the timeout (default 10 s) is healthy.
+  response counts: `2xx`/`3xx` within the timeout (default 10 s) is healthy. There are no
+  retries within a run: each site gets one request per interval (plus one per redirect hop).
+- **Failed-check diagnostics.** For each failed check the redirect chain, the response headers
+  and the first 16 KB of the body are kept (the last 20 per monitor, for up to 31 days), and
+  shown in the detail panel and in *Check now*. The dashboard points out Akamai and Cloudflare
+  block pages (with their reference ID) and errors that came from the site's own origin.
+- **Retry-After.** When a site answers `429` or `503` with `Retry-After`, it isn't checked again
+  until then (at most 30 minutes later).
 - **State machine.** `Pending` → `Up` on the first success. Two consecutive failures → `Down`.
   Two consecutive successes → `Up`.
 - **Incidents** run from the confirmed `Down` check to the confirmed `Up` check. They are kept
@@ -238,6 +245,7 @@ site is reachable from every region or network. Nothing independently monitors t
 | `src/index.ts` | Request routing (Access check first) and the cron entry point |
 | `src/cycle.ts` | One every-minute run: checks → notifications → retention |
 | `src/checks.ts`, `src/probe.ts`, `src/state.ts` | Probing, redirect handling, Up/Down state machine |
+| `src/diagnosis.ts` | Reads a failed response for CDN block pages and origin errors |
 | `src/notifications.ts` | Email/ntfy content and per-channel delivery with retries |
 | `src/maintenance.ts` | Maintenance modes and the still-down reminder |
 | `src/metrics.ts` | Operational/inclusive uptime over a window |
@@ -282,10 +290,11 @@ All routes require a valid Cloudflare Access assertion.
 | --- | --- | --- |
 | `GET` | `/api/monitors` | All monitors with 30-day metrics |
 | `POST` | `/api/monitors` | `{ name, url, group?, timeoutMs?, checkIntervalMinutes? }` |
-| `GET` | `/api/monitors/:id` | Includes the 30-day incident list |
+| `GET` | `/api/monitors/:id` | Includes the 30-day incident list and recent failed checks |
+| `GET` | `/api/monitors/:id/failures/:failureId` | One failed check with its headers, body and diagnosis |
 | `PATCH` | `/api/monitors/:id` | `{ name?, group?, timeoutMs?, checkIntervalMinutes?, url?, confirmUrlChange? }` |
 | `DELETE` | `/api/monitors/:id?confirm=true` | Permanent; removes incident history |
-| `POST` | `/api/monitors/:id/check` | Diagnostics only; records nothing |
+| `POST` | `/api/monitors/:id/check` | Diagnostics only (includes the response when it fails); records nothing |
 | `PUT` | `/api/monitors/:id/maintenance` | `{ mode: "notify" \| "silent" \| "none" }` |
 | `POST` | `/api/monitors/bulk` | `{ action: "maintenance" \| "end-maintenance" \| "delete", mode?, ids, confirm: true }` |
 | `GET` | `/api/me` | Which notification channels are configured |

@@ -167,3 +167,128 @@ describe("scheduled checks", () => {
     expect(await incidents(id)).toHaveLength(0);
   });
 });
+
+const AKAMAI_DENIED = `<HTML><HEAD>
+<TITLE>Access Denied</TITLE>
+</HEAD><BODY>
+<H1>Access Denied</H1>
+You don't have permission to access "http&#58;&#47;&#47;site&#46;example&#47;" on this server.<P>
+Reference&#32;&#35;18&#46;5b6a1002&#46;1792080000&#46;3c4d5e6f
+<P>https&#58;&#47;&#47;errors&#46;edgesuite&#46;net&#47;18&#46;5b6a1002&#46;1792080000&#46;3c4d5e6f</P>
+</BODY></HTML>`;
+
+describe("failed-check diagnostics", () => {
+  it("records the response headers and body of a failed check and spots an Akamai block", async () => {
+    const id = await newMonitor();
+    fakeSites({
+      [SITE]: () =>
+        new Response(AKAMAI_DENIED, {
+          status: 403,
+          headers: { "Content-Type": "text/html", Server: "AkamaiGHost", "Set-Cookie": "ak_bmsc=abc; Path=/" },
+        }),
+    });
+    await run();
+
+    const m = await getMonitor(id);
+    expect(m.failures).toHaveLength(1);
+    expect(m.failures[0]).toMatchObject({
+      status: 403,
+      error: "HTTP 403",
+      source: "Akamai",
+      blocked: true,
+      reference: "18.5b6a1002.1792080000.3c4d5e6f",
+    });
+
+    const res = await api(`/api/monitors/${id}/failures/${m.failures[0].id}`);
+    const f = (await res.json()) as any;
+    expect(f.diagnostics.body).toBe(AKAMAI_DENIED);
+    expect(f.diagnostics.bodyTruncated).toBe(false);
+    expect(f.diagnostics.headers).toContainEqual(["server", "AkamaiGHost"]);
+    expect(f.diagnosis.signals.join("\n")).toMatch(/ak_bmsc/);
+  });
+
+  it("tells an origin error passed through the CDN apart from a block", async () => {
+    const id = await newMonitor();
+    fakeSites({
+      [SITE]: () =>
+        new Response("upstream connect error or disconnect/reset before headers. reset reason: connection failure", {
+          status: 503,
+          headers: { "x-envoy-upstream-service-time": "3" },
+        }),
+    });
+    await run();
+    expect((await getMonitor(id)).failures[0]).toMatchObject({ source: "Origin (Envoy proxy)", blocked: false });
+  });
+
+  it("keeps the redirect chain, caps the body and records timeouts without a response", async () => {
+    const id = await newMonitor({ url: "http://site.example/", timeoutMs: 1000 });
+    fakeSites({
+      "http://site.example/": [{ status: 301, location: SITE }, "hang"],
+      [SITE]: () => new Response("x".repeat(100_000), { status: 500 }),
+    });
+    await run();
+    advance(MINUTE);
+    await run();
+
+    const { failures } = await getMonitor(id);
+    expect(failures.map((f: any) => f.error)).toEqual(["Timeout after 1000 ms", "HTTP 500"]);
+    const [timeout, error] = await Promise.all(
+      failures.map(async (f: any) => (await api(`/api/monitors/${id}/failures/${f.id}`)).json() as Promise<any>),
+    );
+    expect(error.diagnostics.redirects).toEqual([{ url: "http://site.example/", status: 301, location: SITE }]);
+    expect(error.diagnostics.url).toBe(SITE);
+    expect(error.diagnostics.body).toHaveLength(16 * 1024);
+    expect(error.diagnostics.bodyTruncated).toBe(true);
+    expect(timeout.diagnostics.headers).toBeNull();
+  });
+
+  it("keeps only the most recent failures and none for healthy checks", async () => {
+    const id = await newMonitor();
+    fakeSites({ [SITE]: [200, ...Array(25).fill(500)] });
+    await runEachMinute(26);
+    const { failures } = await getMonitor(id);
+    expect(failures).toHaveLength(20);
+    expect(failures[0].checkedAt).toBe(Date.now());
+  });
+
+  it("returns diagnostics from Check now", async () => {
+    const id = await newMonitor();
+    fakeSites({ [SITE]: () => new Response("busy", { status: 503, headers: { "cf-ray": "abc123-AMS" } }) });
+    const res = await api(`/api/monitors/${id}/check`, { method: "POST" });
+    const body = (await res.json()) as any;
+    expect(body.diagnostics.body).toBe("busy");
+    expect(body.diagnosis).toMatchObject({ source: "Cloudflare", reference: "abc123-AMS" });
+  });
+});
+
+describe("Retry-After", () => {
+  it("holds off checks for as long as a 503 asks, then resumes", async () => {
+    const id = await newMonitor();
+    const fetch = fakeSites({
+      [SITE]: [() => new Response("", { status: 503, headers: { "Retry-After": "300" } }), 200],
+    });
+    await run();
+    expect((await getMonitor(id)).nextCheckAfter).toBe(Date.now() + 300_000);
+
+    await runEachMinute(4);
+    expect(fetch).toHaveBeenCalledTimes(1);
+    await runEachMinute(1);
+    expect(fetch).toHaveBeenCalledTimes(2);
+    expect((await getMonitor(id)).nextCheckAfter).toBeNull();
+  });
+
+  it("caps long Retry-After values at 30 minutes and ignores it on other statuses", async () => {
+    const id = await newMonitor();
+    fakeSites({
+      [SITE]: [
+        () => new Response("", { status: 429, headers: { "Retry-After": "86400" } }),
+        () => new Response("", { status: 500, headers: { "Retry-After": "600" } }),
+      ],
+    });
+    await run();
+    expect((await getMonitor(id)).nextCheckAfter).toBe(Date.now() + 30 * MINUTE);
+    advance(30 * MINUTE);
+    await run();
+    expect((await getMonitor(id)).nextCheckAfter).toBeNull();
+  });
+});
