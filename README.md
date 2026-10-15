@@ -81,9 +81,9 @@ Routing](https://developers.cloudflare.com/email-routing/) enabled, and every ad
 (comma-separated) must be a *verified destination address* in Email Routing. Verify new recipients
 there before adding them. Leave both empty to turn email off.
 
-**ntfy**: set `NTFY_URL` (`https://ntfy.sh` or your self-hosted server) and `NTFY_TOPIC`. Pick a hard
-to guess topic name if you use the public ntfy.sh server, or protect the topic with an access
-token and store that token as a secret after the first deploy (step 7). Clear `NTFY_TOPIC` to turn ntfy off.
+**ntfy**: nothing to set in `wrangler.jsonc`. ntfy is configured per deployment with Wrangler
+secrets after the first deploy (step 7). Pick a hard to guess topic name if you use the public
+ntfy.sh server, or protect the topic with an access token.
 
 ### 6. Set your time zone
 
@@ -98,12 +98,17 @@ and ends for the weekly report, and which zone is used for times in alerts and t
 pnpm run deploy
 ```
 
-If you use an ntfy access token, store it now. Wrangler prompts for the value, so it never lands in
-your shell history:
+To turn on ntfy, store its settings as secrets now. Wrangler prompts for each value, so it never
+lands in your shell history or in git:
 
 ```bash
-pnpm exec wrangler secret put NTFY_TOKEN
+pnpm exec wrangler secret put NTFY_TOPIC   # required for ntfy
+pnpm exec wrangler secret put NTFY_URL     # optional: only for a self-hosted server (default https://ntfy.sh)
+pnpm exec wrangler secret put NTFY_TOKEN   # optional: only if your topic needs an access token
 ```
+
+Secrets take effect immediately, without another deploy. To turn ntfy off again, run
+`pnpm exec wrangler secret delete NTFY_TOPIC`.
 
 Open your hostname. You should see the Cloudflare Access login, and then the dashboard. Add your
 first monitor with **Add monitor**.
@@ -132,8 +137,8 @@ Plain settings live under `vars` in `wrangler.jsonc`. Secrets are set with
 | `ACCESS_AUD` | yes | var | Audience (AUD) tag of your Access application |
 | `EMAIL_FROM` | no | var | Sender address (a domain with Email Routing). Empty disables email |
 | `EMAIL_TO` | no | var | Comma-separated verified recipient addresses |
-| `NTFY_URL` | no | var | ntfy server, default `https://ntfy.sh` |
-| `NTFY_TOPIC` | no | var | ntfy topic. Empty disables ntfy |
+| `NTFY_URL` | no | **secret** | ntfy server, default `https://ntfy.sh` |
+| `NTFY_TOPIC` | no | **secret** | ntfy topic. Unset disables ntfy |
 | `NTFY_TOKEN` | no | **secret** | ntfy access token, if your topic requires one |
 | `TIME_ZONE` | no | var | IANA time zone for the report and displayed times, default `UTC` |
 | `REPORT_HOUR` | no | var | Local hour (0–21) for the Monday report, default `8` |
@@ -151,6 +156,10 @@ pnpm run deploy
 
 Your `wrangler.jsonc` and `.dev.vars` aren't tracked, so pulling never overwrites them. If a new
 release adds a setting, compare your file with `wrangler.example.jsonc`.
+
+Upgrading from a version that had `NTFY_URL` and `NTFY_TOPIC` under `vars`: delete both from your
+`wrangler.jsonc`, deploy, then set them with `wrangler secret put` as in step 7. Wrangler refuses a
+secret with the same name as a var that is still deployed.
 
 ## Troubleshooting
 

@@ -151,8 +151,20 @@ describe("transition notifications", () => {
     ]);
   });
 
+  it("publishes to ntfy.sh when NTFY_URL is not set", async () => {
+    e = makeEnv(mailer, { NTFY_URL: undefined });
+    await newMonitor();
+    fakeSites({ [SITE]: 503, "https://ntfy.sh/": ntfy.handler });
+    for (let i = 0; i < 3; i++) {
+      await cycle(e);
+      advance(MINUTE);
+    }
+    expect(ntfy.published).toHaveLength(1);
+    expect(ntfy.published[0].body.topic).toBe("uptime");
+  });
+
   it("skips channels that are not configured", async () => {
-    e = makeEnv(mailer, { NTFY_URL: "", EMAIL_TO: "" });
+    e = makeEnv(mailer, { NTFY_TOPIC: "", EMAIL_TO: "" });
     await newMonitor();
     await runSite([503, 503, 503]);
     expect(mailer.sent).toHaveLength(0);

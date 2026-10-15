@@ -45,8 +45,15 @@ export function emailConfigured(env: Env): boolean {
   return Boolean(env.EMAIL && env.EMAIL_FROM && emailRecipients(env).length > 0);
 }
 
-function ntfyConfigured(env: Env): boolean {
-  return Boolean(env.NTFY_URL && env.NTFY_TOPIC);
+// ntfy settings are Wrangler secrets, so they are undefined until set with `wrangler secret put`.
+const DEFAULT_NTFY_URL = "https://ntfy.sh";
+
+export function ntfyConfigured(env: Env): boolean {
+  return Boolean(env.NTFY_TOPIC);
+}
+
+function ntfyUrl(env: Env): string {
+  return (env.NTFY_URL || DEFAULT_NTFY_URL).replace(/\/$/, "");
 }
 
 export async function sendEmail(env: Env, message: { subject: string; html: string; text: string }) {
@@ -156,7 +163,7 @@ async function sendNtfy(env: Env, body: object) {
   const headers: Record<string, string> = { "Content-Type": "application/json" };
   if (env.NTFY_TOKEN) headers.Authorization = `Bearer ${env.NTFY_TOKEN}`;
   // JSON publishing goes to the server root, with the topic in the body.
-  const res = await fetch(env.NTFY_URL.replace(/\/$/, "") + "/", {
+  const res = await fetch(ntfyUrl(env) + "/", {
     method: "POST",
     headers,
     body: JSON.stringify(body),

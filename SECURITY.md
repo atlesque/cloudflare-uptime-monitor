@@ -16,7 +16,7 @@ as soon as the maintainer can, and a fix is credited to you unless you prefer ot
   `workers.dev` and preview URLs so there is no hostname that bypasses Access.
 - Monitor URLs must be public `http(s)` addresses. Private, loopback and reserved IP ranges and
   internal hostnames are rejected, and every redirect hop is checked again.
-- Secrets (`NTFY_TOKEN`) are Wrangler secrets and never belong in `wrangler.jsonc`.
+- The ntfy settings (`NTFY_URL`, `NTFY_TOPIC`, `NTFY_TOKEN`) are Wrangler secrets and never belong in `wrangler.jsonc`.
   `wrangler.jsonc` and `.dev.vars` are git-ignored. Don't commit them.
 - `DEV_DISABLE_AUTH` is for local development only and is ignored once the Access settings exist.
 
