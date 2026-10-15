@@ -1,7 +1,10 @@
 # Copy to .dev.vars for local development (`pnpm run setup` does this for you).
 # .dev.vars is git-ignored and never deployed. Values here override wrangler.jsonc locally.
 
-# Secret: ntfy publish token. In production set it with `pnpm exec wrangler secret put NTFY_TOKEN`.
+# Secrets: ntfy settings. In production set each with `pnpm exec wrangler secret put <NAME>`.
+# NTFY_TOPIC turns ntfy on; NTFY_URL defaults to https://ntfy.sh; NTFY_TOKEN is only for protected topics.
+NTFY_URL=
+NTFY_TOPIC=
 NTFY_TOKEN=
 
 # Local only: clear the Access settings from wrangler.jsonc and skip Access verification.

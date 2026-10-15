@@ -242,7 +242,7 @@ describe("dashboard", () => {
   });
 
   it("reports which notification channels are configured", async () => {
-    const res = await api("/api/me", undefined, makeEnv(fakeMailer(), { NTFY_URL: "" }));
+    const res = await api("/api/me", undefined, makeEnv(fakeMailer(), { NTFY_TOPIC: "" }));
     expect(await res.json()).toEqual({ timeZone: "Europe/Brussels", notifications: { email: true, ntfy: false } });
   });
 });

@@ -11,7 +11,7 @@ import {
   setMonitorMaintenance,
   updateMonitor,
 } from "./monitors";
-import { emailConfigured } from "./notifications";
+import { emailConfigured, ntfyConfigured } from "./notifications";
 import { REPORT_CRON, reportHour, reportWindowOpen, runWeeklyReport } from "./report";
 import { getTimeZone, setTimeZone } from "./time";
 
@@ -22,7 +22,7 @@ async function route(request: Request, env: Env, url: URL): Promise<Response> {
   if (path === "/api/me" && method === "GET") {
     return Response.json({
       timeZone: getTimeZone(),
-      notifications: { email: emailConfigured(env), ntfy: Boolean(env.NTFY_URL && env.NTFY_TOPIC) },
+      notifications: { email: emailConfigured(env), ntfy: ntfyConfigured(env) },
     });
   }
   if (path === "/api/monitors") {

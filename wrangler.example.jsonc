@@ -62,10 +62,10 @@
     "EMAIL_FROM": "",
     "EMAIL_TO": "",
 
-    // ntfy push notifications (optional: leave empty to turn ntfy off). Works with ntfy.sh
-    // or a self-hosted server. If the topic needs a token, store it as the NTFY_TOKEN secret.
-    "NTFY_URL": "https://ntfy.sh",
-    "NTFY_TOPIC": "",
+    // ntfy push notifications are configured per deployment with Wrangler secrets, not here:
+    //   wrangler secret put NTFY_TOPIC   (required to turn ntfy on)
+    //   wrangler secret put NTFY_URL     (optional, defaults to https://ntfy.sh)
+    //   wrangler secret put NTFY_TOKEN   (optional, if the topic needs an access token)
 
     // IANA time zone for the weekly report week boundaries and for times in alerts and the
     // dashboard, e.g. "Europe/Brussels" or "America/New_York". Empty means UTC.
