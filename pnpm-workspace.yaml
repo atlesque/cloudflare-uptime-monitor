@@ -1,6 +1,11 @@
 packages:
   - dashboard
 
+# Only resolve package versions published at least 3 days ago, so installs work behind
+# supply-chain guards with a minimum package age (e.g. Aikido safe-chain) and fresh,
+# possibly compromised releases are never picked up.
+minimumReleaseAge: 4320
+
 onlyBuiltDependencies:
   - "@parcel/watcher"
   - "@tailwindcss/oxide"
