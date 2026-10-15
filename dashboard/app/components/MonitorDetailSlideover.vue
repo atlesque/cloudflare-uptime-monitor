@@ -50,7 +50,7 @@ function maintenanceText(silentMs: number, notifyMs: number) {
         {{ detail.name }}
         <MonitorStateBadges :monitor="detail" size="sm" />
       </span>
-      <span v-else>Monitor</span>
+      <USkeleton v-else class="h-5 w-40" />
     </template>
     <template #description>
       <a
@@ -63,15 +63,37 @@ function maintenanceText(silentMs: number, notifyMs: number) {
         {{ detail.url }}
         <UIcon name="i-lucide-arrow-up-right" class="size-3.5 shrink-0" />
       </a>
-      <span v-else class="sr-only">Monitor details</span>
+      <USkeleton v-else class="mt-1 h-3.5 w-56" />
     </template>
 
     <template #body>
       <UAlert v-if="error" color="error" variant="subtle" icon="i-lucide-circle-alert" :description="error" />
 
-      <div v-else-if="!detail" class="space-y-4">
-        <USkeleton class="h-24 w-full" />
-        <USkeleton class="h-40 w-full" />
+      <div v-else-if="!detail" class="space-y-6" aria-busy="true" aria-label="Loading monitor">
+        <div class="flex gap-2">
+          <USkeleton class="h-8 w-28 rounded-md" />
+          <USkeleton class="h-8 w-20 rounded-md" />
+        </div>
+        <div class="space-y-2">
+          <USkeleton class="h-4 w-24" />
+          <div class="grid grid-cols-2 gap-3 sm:grid-cols-3">
+            <div v-for="i in 3" :key="i" class="space-y-2 rounded-lg border border-default p-3">
+              <USkeleton class="h-3 w-14" />
+              <USkeleton class="h-6 w-20" />
+            </div>
+          </div>
+        </div>
+        <div class="space-y-3">
+          <USkeleton class="h-4 w-16" />
+          <div v-for="i in 5" :key="i" class="flex gap-6">
+            <USkeleton class="h-4 w-24" />
+            <USkeleton class="h-4 w-40" />
+          </div>
+        </div>
+        <div class="space-y-3">
+          <USkeleton class="h-4 w-20" />
+          <USkeleton v-for="i in 2" :key="i" class="h-20 w-full rounded-lg" />
+        </div>
       </div>
 
       <div v-else class="space-y-6">

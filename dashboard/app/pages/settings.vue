@@ -210,7 +210,22 @@ onMounted(async () => {
         </div>
       </template>
 
-      <USkeleton v-if="!settings" class="h-48 w-full" />
+      <div v-if="!settings" class="space-y-4" aria-busy="true" aria-label="Loading ntfy settings">
+        <div class="grid gap-4 sm:grid-cols-2">
+          <div v-for="i in 2" :key="i" class="space-y-2">
+            <USkeleton class="h-4 w-20" />
+            <USkeleton class="h-8 w-full rounded-md" />
+          </div>
+        </div>
+        <div class="space-y-2">
+          <USkeleton class="h-4 w-24" />
+          <USkeleton class="h-8 w-full rounded-md" />
+        </div>
+        <div class="flex gap-2">
+          <USkeleton class="h-8 w-16 rounded-md" />
+          <USkeleton class="h-8 w-28 rounded-md" />
+        </div>
+      </div>
       <form v-else-if="settings" class="space-y-4" @submit.prevent="saveNtfy">
         <UAlert
           v-if="settings.ntfy.source === 'secrets'"
@@ -290,7 +305,14 @@ onMounted(async () => {
           <h2 class="font-semibold text-highlighted">Check frequency</h2>
         </div>
       </template>
-      <USkeleton v-if="!settings" class="h-24 w-full" />
+      <div v-if="!settings" class="space-y-2" aria-busy="true" aria-label="Loading check settings">
+        <USkeleton class="h-4 w-28" />
+        <USkeleton class="h-3 w-full max-w-md" />
+        <div class="flex gap-2">
+          <USkeleton class="h-8 w-56 rounded-md" />
+          <USkeleton class="h-8 w-16 rounded-md" />
+        </div>
+      </div>
       <div v-else class="space-y-4">
         <UFormField
           label="Default interval"
@@ -325,7 +347,14 @@ onMounted(async () => {
         </div>
         <p class="mt-1 text-sm text-muted">Add a monitor to a group by editing the monitor and typing a group name.</p>
       </template>
-      <div v-if="!groupsLoaded" class="p-4"><USkeleton class="h-16 w-full" /></div>
+      <ul v-if="!groupsLoaded" class="divide-y divide-default" aria-busy="true" aria-label="Loading groups">
+        <li v-for="i in 3" :key="i" class="flex items-center gap-3 px-4 py-3.5">
+          <USkeleton class="h-4 w-32" />
+          <USkeleton class="ms-auto h-3.5 w-16" />
+          <USkeleton class="size-6 rounded-md" />
+          <USkeleton class="size-6 rounded-md" />
+        </li>
+      </ul>
       <p v-else-if="groups.length === 0" class="p-4 text-sm text-muted">No groups yet.</p>
       <ul v-else class="divide-y divide-default">
         <li v-for="g in groups" :key="g.name" class="flex items-center gap-3 px-4 py-3">

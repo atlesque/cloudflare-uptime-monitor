@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import type { Monitor } from "~/types";
 
-const props = defineProps<{ monitors: Monitor[] }>();
+const props = defineProps<{ monitors: Monitor[]; loading?: boolean }>();
 const status = defineModel<string>("status", { required: true });
 
 const cards = computed(() => {
@@ -32,7 +32,9 @@ const toggle = (key: string) => (status.value = status.value === key ? "all" : k
         <span>{{ card.label }}</span>
         <UIcon :name="card.icon" class="size-5" :class="card.value > 0 ? card.color : ''" />
       </div>
+      <USkeleton v-if="loading" class="mt-3 h-8 w-10" />
       <div
+        v-else
         class="mt-2 text-3xl font-semibold tabular-nums"
         :class="card.key === 'down' && card.value > 0 ? 'text-error' : 'text-highlighted'"
       >

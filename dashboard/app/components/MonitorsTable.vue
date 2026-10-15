@@ -134,7 +134,8 @@ const bulk = (action: BulkAction) => emit("bulk", action, selected.value, clearS
         />
         <USelect v-model="group" :items="groupItems" class="w-40" aria-label="Filter by group" />
         <USelect v-model="status" :items="statusItems" class="w-40" aria-label="Filter by state" />
-        <div class="ms-auto text-sm text-muted">
+        <USkeleton v-if="loading" class="ms-auto h-4 w-20" />
+        <div v-else class="ms-auto text-sm text-muted">
           {{ plural(visible.length, "monitor") }}<template v-if="visible.length !== monitors.length"> of {{ monitors.length }}</template>
         </div>
       </div>
@@ -154,12 +155,45 @@ const bulk = (action: BulkAction) => emit("bulk", action, selected.value, clearS
       </div>
     </template>
 
+    <!-- First load: placeholder rows shaped like the table (or the card list on phones). -->
+    <div v-if="loading" aria-busy="true" aria-label="Loading monitors">
+      <div class="hidden border-b border-default px-4 py-3.5 md:flex md:items-center md:gap-6">
+        <USkeleton class="size-4 rounded" />
+        <USkeleton v-for="(w, i) in ['w-24', 'w-14', 'w-12', 'w-20', 'w-24', 'w-20', 'w-24']" :key="i" class="h-3.5" :class="w" />
+      </div>
+      <ul class="divide-y divide-default">
+        <li v-for="i in 6" :key="i" class="flex items-start gap-4 px-4 py-4">
+          <USkeleton class="mt-0.5 size-4 shrink-0 rounded" />
+          <div class="min-w-0 flex-1 space-y-2 md:w-56 md:flex-none">
+            <USkeleton class="h-4 w-32" />
+            <USkeleton class="h-3 w-48 max-w-full" />
+            <div class="flex gap-1.5 md:hidden">
+              <USkeleton class="h-5 w-14 rounded-md" />
+              <USkeleton class="h-5 w-16 rounded-md" />
+            </div>
+          </div>
+          <USkeleton class="hidden h-5 w-16 rounded-md md:block" />
+          <USkeleton class="hidden h-5 w-14 rounded-md md:block" />
+          <USkeleton class="h-4 w-12 md:ms-auto md:w-16" />
+          <USkeleton class="hidden h-4 w-14 md:block" />
+          <div class="hidden space-y-2 lg:block">
+            <USkeleton class="h-4 w-16" />
+            <USkeleton class="h-3 w-24" />
+          </div>
+          <div class="flex gap-1">
+            <USkeleton class="size-7 rounded-md" />
+            <USkeleton class="hidden size-7 rounded-md md:block" />
+          </div>
+        </li>
+      </ul>
+    </div>
+
+    <template v-else>
     <UTable
       v-model:row-selection="rowSelection"
       :data="visible"
       :columns="columns"
       :get-row-id="(row: Monitor) => String(row.id)"
-      :loading="loading"
       :meta="{ class: { tr: (row) => (row.original.state === 'down' ? 'bg-error/5' : '') } }"
       sticky="header"
       class="hidden max-h-[calc(100vh-18rem)] min-h-48 md:block"
@@ -356,5 +390,6 @@ const bulk = (action: BulkAction) => emit("bulk", action, selected.value, clearS
         <p v-else class="text-muted">No monitors match the filters.</p>
       </div>
     </div>
+    </template>
   </UCard>
 </template>

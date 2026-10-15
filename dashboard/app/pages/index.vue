@@ -175,6 +175,7 @@ onMounted(async () => {
       <span class="text-xs text-muted" aria-live="polite">
         <span v-if="refreshError" class="text-error">Refresh failed: {{ refreshError }}</span>
         <template v-else-if="updatedAt">Updated {{ ago(updatedAt, now) }}</template>
+        <USkeleton v-else class="inline-block h-3 w-24 align-middle" />
       </span>
       <UButton class="ms-auto" icon="i-lucide-plus" label="Add monitor" @click="openForm(null)" />
     </div>
@@ -188,7 +189,7 @@ onMounted(async () => {
       :description="refreshError"
     />
 
-    <StatCards v-model:status="status" :monitors="monitors" />
+    <StatCards v-model:status="status" :monitors="monitors" :loading="!loaded" />
 
     <MonitorsTable
       v-model:status="status"
@@ -206,6 +207,11 @@ onMounted(async () => {
     />
 
     <footer class="space-y-1 pb-4 text-xs text-muted">
+      <div v-if="!me && !loaded" class="flex gap-4">
+        <USkeleton class="h-3 w-32" />
+        <USkeleton class="h-3 w-28" />
+        <USkeleton class="h-3 w-36" />
+      </div>
       <p v-if="me" class="flex flex-wrap items-center gap-x-4 gap-y-1">
         <span class="inline-flex items-center gap-1">
           <UIcon name="i-lucide-mail" class="size-3.5" />
