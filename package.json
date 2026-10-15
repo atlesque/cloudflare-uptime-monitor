@@ -7,10 +7,13 @@
   "scripts": {
     "setup": "node scripts/setup.mjs",
     "predev": "node scripts/setup.mjs",
-    "dev": "wrangler dev --test-scheduled",
-    "deploy": "wrangler deploy",
+    "dev": "pnpm build && wrangler dev --test-scheduled",
+    "dev:dashboard": "pnpm --filter dashboard dev",
+    "build": "pnpm --filter dashboard generate",
+    "deploy": "pnpm build && wrangler deploy",
+    "pretest": "pnpm build",
     "test": "vitest run",
-    "typecheck": "tsc --noEmit",
+    "typecheck": "tsc --noEmit && pnpm --filter dashboard typecheck",
     "types": "node scripts/setup.mjs && wrangler types --strict-vars=false -c wrangler.example.jsonc",
     "db:migrate:local": "wrangler d1 migrations apply DB --local",
     "db:migrate:remote": "wrangler d1 migrations apply DB --remote"

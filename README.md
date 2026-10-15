@@ -195,9 +195,11 @@ secret with the same name as a var that is still deployed.
 - **Weekly report.** Emailed on Mondays at `REPORT_HOUR` (default 08:00) in your `TIME_ZONE` for the completed
   Monday–Sunday week, and only when that week had an operational outage. It runs on its own
   cron, separate from the checks (see [Schedules](#schedules)).
-- **Dashboard.** Table with filters, explicit and "all filtered" selection, bulk actions with
-  confirmation, add/edit (a URL change must be confirmed and resets history), diagnostics-only
-  *Check now*, and per-monitor incident history.
+- **Dashboard.** Built with Nuxt 4 and Nuxt UI, with light and dark themes. Status cards that
+  double as filters, a table (a card list on phones) with search and filters, explicit and "all
+  filtered" selection, bulk actions with confirmation, add/edit (a URL change must be confirmed
+  and resets history), diagnostics-only *Check now*, and a detail panel with per-monitor incident
+  history.
 
 Checks run from Cloudflare's network only, a single vantage point. A result does not prove a
 site is reachable from every region or network. Nothing independently monitors the monitor.
@@ -216,7 +218,7 @@ site is reachable from every region or network. Nothing independently monitors t
 | `src/monitors.ts` | Monitor API: list, detail, create, edit, Check now, maintenance, bulk |
 | `src/auth.ts` | Cloudflare Access JWT verification |
 | `src/url.ts`, `src/budget.ts` | Public-URL validation, Free-plan subrequest budget |
-| `public/` | Dashboard (plain HTML/CSS/JS, no build step) |
+| `dashboard/` | Dashboard: a client-only [Nuxt 4](https://nuxt.com) + [Nuxt UI](https://ui.nuxt.com) app, built into `public/` |
 | `migrations/` | D1 schema |
 
 ### Schedules
@@ -269,7 +271,15 @@ through pnpm (`pnpm exec wrangler …` or `pnpm wrangler …`), not as a bare `w
 pnpm install
 pnpm run setup                     # creates wrangler.jsonc and .dev.vars (DEV_DISABLE_AUTH=true skips Access locally)
 pnpm db:migrate:local
-pnpm dev                           # wrangler dev --test-scheduled
+pnpm dev                           # builds the dashboard, then wrangler dev --test-scheduled
+```
+
+`pnpm run deploy` and `pnpm dev` build the dashboard into `public/` first (`pnpm build`). To work on
+the dashboard with hot reload, keep `pnpm dev` running and start the Nuxt dev server next to it;
+it proxies `/api` to the Worker on port 8787:
+
+```bash
+pnpm dev:dashboard                 # http://localhost:3000
 ```
 
 To trigger the checks or the weekly report locally (the report only acts on a local Monday in the

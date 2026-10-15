@@ -1,0 +1,63 @@
+import type { Me, Monitor } from "~/types";
+
+const REFRESH_MS = 30_000;
+
+/** Shared monitor list, refreshed every 30 seconds. */
+export function useMonitors() {
+  const monitors = useState<Monitor[]>("monitors", () => []);
+  const loaded = useState("monitors-loaded", () => false);
+  const updatedAt = useState<number | null>("monitors-updated", () => null);
+  const refreshError = useState<string | null>("monitors-error", () => null);
+
+  async function refresh() {
+    try {
+      const data = await api<{ monitors: Monitor[] }>("/api/monitors");
+      monitors.value = data.monitors;
+      updatedAt.value = Date.now();
+      refreshError.value = null;
+    } catch (err) {
+      refreshError.value = errorMessage(err);
+    } finally {
+      loaded.value = true;
+    }
+  }
+
+  const groups = computed(() =>
+    [...new Set(monitors.value.map((m) => m.group).filter((g): g is string => !!g))].sort((a, b) => a.localeCompare(b)),
+  );
+
+  return { monitors, loaded, updatedAt, refreshError, refresh, groups };
+}
+
+/** Starts the auto refresh. `paused` skips ticks, e.g. while a dialog is open. */
+export function useAutoRefresh(refresh: () => Promise<void>, paused: () => boolean) {
+  let timer: ReturnType<typeof setInterval> | undefined;
+  onMounted(() => {
+    timer = setInterval(() => {
+      if (!paused()) refresh();
+    }, REFRESH_MS);
+  });
+  onBeforeUnmount(() => clearInterval(timer));
+}
+
+export function useMe() {
+  const me = useState<Me | null>("me", () => null);
+  async function load() {
+    try {
+      me.value = await api<Me>("/api/me");
+      setDisplayTimeZone(me.value.timeZone);
+    } catch {
+      me.value = null;
+    }
+  }
+  return { me, load };
+}
+
+/** A clock that ticks every few seconds, for "x ago" labels. */
+export function useTicker(intervalMs = 5_000) {
+  const now = ref(Date.now());
+  let timer: ReturnType<typeof setInterval> | undefined;
+  onMounted(() => (timer = setInterval(() => (now.value = Date.now()), intervalMs)));
+  onBeforeUnmount(() => clearInterval(timer));
+  return now;
+}
