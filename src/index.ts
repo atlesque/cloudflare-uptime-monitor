@@ -11,8 +11,16 @@ import {
   setMonitorMaintenance,
   updateMonitor,
 } from "./monitors";
-import { emailConfigured, ntfyConfigured } from "./notifications";
+import { listGroups, removeGroup, renameGroup } from "./groups";
+import { emailConfigured, ntfyConfigured, sendNtfy } from "./notifications";
 import { REPORT_CRON, reportHour, reportWindowOpen, runWeeklyReport } from "./report";
+import {
+  getSettings,
+  resetNtfySettings,
+  saveCheckSettings,
+  saveNtfySettings,
+  sendNtfyTest,
+} from "./settings";
 import { getTimeZone, setTimeZone } from "./time";
 
 async function route(request: Request, env: Env, url: URL): Promise<Response> {
@@ -22,7 +30,7 @@ async function route(request: Request, env: Env, url: URL): Promise<Response> {
   if (path === "/api/me" && method === "GET") {
     return Response.json({
       timeZone: getTimeZone(),
-      notifications: { email: emailConfigured(env), ntfy: ntfyConfigured(env) },
+      notifications: { email: emailConfigured(env), ntfy: await ntfyConfigured(env) },
     });
   }
   if (path === "/api/monitors") {
@@ -34,6 +42,20 @@ async function route(request: Request, env: Env, url: URL): Promise<Response> {
     if (method === "POST") return Response.json(await bulkAction(env, request));
     throw new HttpError(405, "Method not allowed");
   }
+
+  if (path === "/api/settings" && method === "GET") return Response.json(await getSettings(env));
+  if (path === "/api/settings/ntfy") {
+    if (method === "PUT") return Response.json(await saveNtfySettings(env, request));
+    if (method === "DELETE") return Response.json(await resetNtfySettings(env));
+    throw new HttpError(405, "Method not allowed");
+  }
+  if (path === "/api/settings/ntfy/test" && method === "POST") {
+    return Response.json(await sendNtfyTest(env, request, sendNtfy));
+  }
+  if (path === "/api/settings/checks" && method === "PUT") return Response.json(await saveCheckSettings(env, request));
+  if (path === "/api/groups" && method === "GET") return Response.json(await listGroups(env));
+  if (path === "/api/groups/rename" && method === "POST") return Response.json(await renameGroup(env, request));
+  if (path === "/api/groups/remove" && method === "POST") return Response.json(await removeGroup(env, request));
 
   const match = /^\/api\/monitors\/(\d+)(\/check|\/maintenance)?$/.exec(path);
   if (match) {

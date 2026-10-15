@@ -26,6 +26,8 @@ export interface Monitor {
   url: string;
   group: string | null;
   timeoutMs: number;
+  /** null follows the default interval from the settings. */
+  checkIntervalMinutes: number | null;
   createdAt: number;
   observedSince: number;
   state: MonitorState;
@@ -80,4 +82,21 @@ export interface ConfirmOptions {
   okLabel: string;
   danger?: boolean;
   run: () => Promise<void>;
+}
+
+export interface Settings {
+  ntfy: {
+    source: "dashboard" | "secrets";
+    enabled: boolean;
+    url: string | null;
+    topic: string | null;
+    tokenSet: boolean;
+    secrets: { url: boolean; topic: boolean; token: boolean };
+  };
+  checks: { defaultIntervalMinutes: number; intervals: number[] };
+}
+
+export interface Group {
+  name: string;
+  monitors: number;
 }

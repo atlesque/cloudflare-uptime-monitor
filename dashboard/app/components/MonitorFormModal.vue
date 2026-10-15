@@ -2,11 +2,11 @@
 import type { FormError } from "@nuxt/ui";
 import type { Monitor } from "~/types";
 
-const props = defineProps<{ monitor: Monitor | null; groups: string[] }>();
+const props = defineProps<{ monitor: Monitor | null; groups: string[]; defaultInterval: number | null; intervals: number[] }>();
 const open = defineModel<boolean>("open", { required: true });
 const emit = defineEmits<{ saved: [message: string] }>();
 
-const form = reactive({ name: "", url: "", group: "", timeout: 10, confirmUrlChange: false });
+const form = reactive({ name: "", url: "", group: "", timeout: 10, interval: "default", confirmUrlChange: false });
 const error = ref<string | null>(null);
 const saving = ref(false);
 
@@ -18,10 +18,16 @@ watch(open, (isOpen) => {
     url: m?.url ?? "",
     group: m?.group ?? "",
     timeout: (m?.timeoutMs ?? 10_000) / 1000,
+    interval: m?.checkIntervalMinutes == null ? "default" : String(m.checkIntervalMinutes),
     confirmUrlChange: false,
   });
   error.value = null;
 });
+
+const intervalItems = computed(() => [
+  { label: props.defaultInterval ? `Default (${formatInterval(props.defaultInterval)})` : "Default", value: "default" },
+  ...props.intervals.map((n) => ({ label: formatInterval(n).replace(/^every/, "Every"), value: String(n) })),
+]);
 
 const urlChanged = computed(() => !!props.monitor && form.url.trim() !== props.monitor.url);
 
@@ -44,6 +50,7 @@ async function submit() {
     url: form.url,
     group: form.group.trim() || null,
     timeoutMs: Math.round(form.timeout * 1000),
+    checkIntervalMinutes: form.interval === "default" ? null : Number(form.interval),
   };
   saving.value = true;
   error.value = null;
@@ -66,7 +73,7 @@ async function submit() {
 </script>
 
 <template>
-  <UModal v-model:open="open" :title="monitor ? `Edit ${monitor.name}` : 'Add monitor'" description="Checked every minute with a GET request. 2xx and 3xx responses count as up.">
+  <UModal v-model:open="open" :title="monitor ? `Edit ${monitor.name}` : 'Add monitor'" description="Checked with a GET request. 2xx and 3xx responses count as up.">
     <template #body>
       <UForm id="monitor-form" :state="form" :validate="validate" :validate-on="['blur']" class="space-y-4" @submit="submit">
         <UFormField label="Name" name="name" required>
@@ -86,6 +93,9 @@ async function submit() {
             <UCheckbox v-model="form.confirmUrlChange" label="I understand the history will be reset" />
           </UFormField>
         </template>
+        <UFormField label="Check interval" name="interval" description="A monitor goes down after two failed checks in a row.">
+          <USelect v-model="form.interval" :items="intervalItems" class="w-full" />
+        </UFormField>
         <div class="grid gap-4 sm:grid-cols-2">
           <UFormField label="Group" name="group" hint="Optional">
             <UInput v-model="form.group" maxlength="50" list="group-options" class="w-full" />

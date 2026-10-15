@@ -1,4 +1,4 @@
-import type { Me, Monitor } from "~/types";
+import type { Me, Monitor, Settings } from "~/types";
 
 const REFRESH_MS = 30_000;
 
@@ -60,4 +60,18 @@ export function useTicker(intervalMs = 5_000) {
   onMounted(() => (timer = setInterval(() => (now.value = Date.now()), intervalMs)));
   onBeforeUnmount(() => clearInterval(timer));
   return now;
+}
+
+export function useSettings() {
+  const settings = useState<Settings | null>("settings", () => null);
+  const error = useState<string | null>("settings-error", () => null);
+  async function load() {
+    try {
+      settings.value = await api<Settings>("/api/settings");
+      error.value = null;
+    } catch (err) {
+      error.value = errorMessage(err);
+    }
+  }
+  return { settings, error, load };
 }

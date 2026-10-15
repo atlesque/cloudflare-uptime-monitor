@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import type { Monitor, MonitorDetail } from "~/types";
 
-const props = defineProps<{ monitorId: number | null; checking: boolean }>();
+const props = defineProps<{ monitorId: number | null; checking: boolean; defaultInterval: number | null }>();
 const open = defineModel<boolean>("open", { required: true });
 const emit = defineEmits<{ edit: [monitor: Monitor]; check: [monitor: Monitor] }>();
 
@@ -126,6 +126,12 @@ function maintenanceText(silentMs: number, notifyMs: number) {
           <dl class="grid grid-cols-[auto_1fr] gap-x-6 gap-y-2 text-sm">
             <dt class="text-muted">Group</dt>
             <dd>{{ detail.group ?? "—" }}</dd>
+            <dt class="text-muted">Checked</dt>
+            <dd>
+              <template v-if="detail.checkIntervalMinutes != null">{{ formatInterval(detail.checkIntervalMinutes) }}</template>
+              <template v-else-if="defaultInterval">{{ formatInterval(defaultInterval) }} <span class="text-muted">(default)</span></template>
+              <template v-else>Default interval</template>
+            </dd>
             <dt class="text-muted">Timeout</dt>
             <dd>{{ detail.timeoutMs / 1000 }} s</dd>
             <dt class="text-muted">Observed since</dt>

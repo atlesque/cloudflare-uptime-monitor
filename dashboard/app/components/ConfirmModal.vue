@@ -28,7 +28,7 @@ async function confirm() {
     <template #body>
       <div v-if="options" class="space-y-4 text-sm">
         <p>{{ options.intro }}</p>
-        <ul class="max-h-60 divide-y divide-default overflow-y-auto rounded-md border border-default">
+        <ul v-if="options.monitors.length" class="max-h-60 divide-y divide-default overflow-y-auto rounded-md border border-default">
           <li v-for="m in options.monitors" :key="m.id" class="flex flex-col px-3 py-2">
             <span class="font-medium text-highlighted">{{ m.name }}</span>
             <span class="truncate text-xs text-muted">{{ m.url }}</span>

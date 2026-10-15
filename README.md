@@ -81,9 +81,9 @@ Routing](https://developers.cloudflare.com/email-routing/) enabled, and every ad
 (comma-separated) must be a *verified destination address* in Email Routing. Verify new recipients
 there before adding them. Leave both empty to turn email off.
 
-**ntfy**: nothing to set in `wrangler.jsonc`. ntfy is configured per deployment with Wrangler
-secrets after the first deploy (step 7). Pick a hard to guess topic name if you use the public
-ntfy.sh server, or protect the topic with an access token.
+**ntfy**: nothing to set in `wrangler.jsonc`. Set it up on the dashboard's **Settings** page
+after the first deploy, or with Wrangler secrets (step 7). Pick a hard to guess topic name if you
+use the public ntfy.sh server, or protect the topic with an access token.
 
 ### 6. Set your time zone
 
@@ -98,7 +98,8 @@ and ends for the weekly report, and which zone is used for times in alerts and t
 pnpm run deploy
 ```
 
-To turn on ntfy, store its settings as secrets now. Wrangler prompts for each value, so it never
+To turn on ntfy, either open **Settings** on the dashboard, enter a topic and send a test
+notification, or store its settings as secrets now. Wrangler prompts for each value, so it never
 lands in your shell history or in git:
 
 ```bash
@@ -109,6 +110,10 @@ pnpm exec wrangler secret put NTFY_TOKEN   # optional: only if your topic needs 
 
 Secrets take effect immediately, without another deploy. To turn ntfy off again, run
 `pnpm exec wrangler secret delete NTFY_TOPIC`.
+
+Once ntfy is saved on the Settings page, those settings win over the secrets (an access token
+saved there is kept in D1 and never shown again). *Use deployment secrets instead* on that page
+switches back.
 
 Open your hostname. You should see the Cloudflare Access login, and then the dashboard. Add your
 first monitor with **Add monitor**.
@@ -177,7 +182,8 @@ secret with the same name as a var that is still deployed.
 
 ## What it does
 
-- **Checks every minute.** Each monitor gets a `GET` request. Up to 5 redirects are followed,
+- **Checks every minute by default.** The interval is set on the Settings page (1 to 60 minutes)
+  and can be overridden per monitor. Each check is a `GET` request. Up to 5 redirects are followed,
   including HTTP→HTTPS, and every hop is re-checked against the public-target rules. The final
   response counts: `2xx`/`3xx` within the timeout (default 10 s) is healthy.
 - **State machine.** `Pending` → `Up` on the first success. Two consecutive failures → `Down`.
@@ -195,7 +201,8 @@ secret with the same name as a var that is still deployed.
 - **Weekly report.** Emailed on Mondays at `REPORT_HOUR` (default 08:00) in your `TIME_ZONE` for the completed
   Monday–Sunday week, and only when that week had an operational outage. It runs on its own
   cron, separate from the checks (see [Schedules](#schedules)).
-- **Dashboard.** Built with Nuxt 4 and Nuxt UI, with light and dark themes. Status cards that
+- **Dashboard.** Built with Nuxt 4 and Nuxt UI, with light and dark themes. A Settings page for
+  ntfy (with a test notification), the default check interval, and renaming or removing groups. Status cards that
   double as filters, a table (a card list on phones) with search and filters, explicit and "all
   filtered" selection, bulk actions with confirmation, add/edit (a URL change must be confirmed
   and resets history), diagnostics-only *Check now*, and a detail panel with per-monitor incident
@@ -216,6 +223,7 @@ site is reachable from every region or network. Nothing independently monitors t
 | `src/metrics.ts` | Operational/inclusive uptime over a window |
 | `src/report.ts`, `src/time.ts` | Weekly report scheduling (configurable time zone) and rendering |
 | `src/monitors.ts` | Monitor API: list, detail, create, edit, Check now, maintenance, bulk |
+| `src/settings.ts`, `src/groups.ts` | Settings saved from the dashboard (ntfy, check interval) and group management |
 | `src/auth.ts` | Cloudflare Access JWT verification |
 | `src/url.ts`, `src/budget.ts` | Public-URL validation, Free-plan subrequest budget |
 | `dashboard/` | Dashboard: a client-only [Nuxt 4](https://nuxt.com) + [Nuxt UI](https://ui.nuxt.com) app, built into `public/` |
@@ -253,14 +261,22 @@ All routes require a valid Cloudflare Access assertion.
 | Method | Path | Notes |
 | --- | --- | --- |
 | `GET` | `/api/monitors` | All monitors with 30-day metrics |
-| `POST` | `/api/monitors` | `{ name, url, group?, timeoutMs? }` |
+| `POST` | `/api/monitors` | `{ name, url, group?, timeoutMs?, checkIntervalMinutes? }` |
 | `GET` | `/api/monitors/:id` | Includes the 30-day incident list |
-| `PATCH` | `/api/monitors/:id` | `{ name?, group?, timeoutMs?, url?, confirmUrlChange? }` |
+| `PATCH` | `/api/monitors/:id` | `{ name?, group?, timeoutMs?, checkIntervalMinutes?, url?, confirmUrlChange? }` |
 | `DELETE` | `/api/monitors/:id?confirm=true` | Permanent; removes incident history |
 | `POST` | `/api/monitors/:id/check` | Diagnostics only; records nothing |
 | `PUT` | `/api/monitors/:id/maintenance` | `{ mode: "notify" \| "silent" \| "none" }` |
 | `POST` | `/api/monitors/bulk` | `{ action: "maintenance" \| "end-maintenance" \| "delete", mode?, ids, confirm: true }` |
 | `GET` | `/api/me` | Which notification channels are configured |
+| `GET` | `/api/settings` | ntfy settings (never the token or secret values) and the default check interval |
+| `PUT` | `/api/settings/ntfy` | `{ url?, topic, token?, clearToken? }`; empty topic turns ntfy off |
+| `DELETE` | `/api/settings/ntfy` | Forget the saved ntfy settings and use the Wrangler secrets |
+| `POST` | `/api/settings/ntfy/test` | Test notification; body as for `PUT` to test unsaved values |
+| `PUT` | `/api/settings/checks` | `{ defaultIntervalMinutes }`: one of 1, 2, 3, 5, 10, 15, 30, 60 |
+| `GET` | `/api/groups` | Groups with their monitor counts |
+| `POST` | `/api/groups/rename` | `{ from, to }`; renaming onto an existing group merges them |
+| `POST` | `/api/groups/remove` | `{ name, confirm: true }`; the monitors stay, without a group |
 
 ## Develop
 
@@ -302,7 +318,7 @@ The dev bypass is ignored whenever `ACCESS_TEAM_DOMAIN` and `ACCESS_AUD` are set
 
 ## Glossary
 
-- **Monitor:** one public HTTP(S) URL that is checked every minute. At most one **monitor group**.
+- **Monitor:** one public HTTP(S) URL that is checked on an interval (every minute by default). At most one **monitor group**.
 - **Check:** one scheduled probe of a monitor. **Check now** is a manual probe for diagnostics
   that changes nothing.
 - **Pending / Up / Down:** a monitor's availability state. `Down` and recovery are only

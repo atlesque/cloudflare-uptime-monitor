@@ -58,3 +58,5 @@ export function uptimeColor(pct: number | null) {
 }
 
 export const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? "" : "s"}`;
+
+export const formatInterval = (minutes: number) => (minutes === 1 ? "every minute" : `every ${minutes} minutes`);

@@ -5,6 +5,7 @@ import { setMaintenance } from "./maintenance";
 import { computeMetrics, maintenanceOverlap, type IncidentSpan, type MaintenanceSpan } from "./metrics";
 import type { MaintenanceMode } from "./notifications";
 import { probe } from "./probe";
+import { parseInterval } from "./settings";
 import { DAY } from "./time";
 import { normalizeMonitorUrl } from "./url";
 
@@ -20,6 +21,7 @@ interface MonitorRow {
   url: string;
   group_name: string | null;
   timeout_ms: number;
+  check_interval_minutes: number | null;
   created_at: number;
   observed_since: number;
   state: string;
@@ -48,7 +50,7 @@ interface MaintenanceRow {
 }
 
 const SELECT_MONITORS = `
-  SELECT m.id, m.name, m.url, m.group_name, m.timeout_ms, m.created_at, m.observed_since, m.state,
+  SELECT m.id, m.name, m.url, m.group_name, m.timeout_ms, m.check_interval_minutes, m.created_at, m.observed_since, m.state,
          m.last_checked_at, m.last_status, m.last_error, m.last_duration_ms, m.maintenance_mode,
          i.started_at AS outage_started_at, p.started_at AS maintenance_started_at
     FROM monitors m
@@ -98,6 +100,8 @@ function toApi(row: MonitorRow, history: { incidents: IncidentRow[]; maintenance
     url: row.url,
     group: row.group_name,
     timeoutMs: row.timeout_ms,
+    /** null follows the default interval from the settings. */
+    checkIntervalMinutes: row.check_interval_minutes,
     createdAt: row.created_at,
     observedSince: row.observed_since,
     state: row.state,
@@ -167,7 +171,7 @@ function parseUrl(v: unknown): string {
   return url.url;
 }
 
-function parseGroup(v: unknown): string | null {
+export function parseGroup(v: unknown): string | null {
   if (v === undefined || v === null) return null;
   if (typeof v !== "string" || v.trim().length > 50) {
     throw new HttpError(400, "group must be a string of at most 50 characters");
@@ -181,6 +185,10 @@ function parseTimeout(v: unknown): number {
     throw new HttpError(400, `timeoutMs must be an integer between ${MIN_TIMEOUT_MS} and ${MAX_TIMEOUT_MS}`);
   }
   return t;
+}
+
+function parseMonitorInterval(v: unknown): number | null {
+  return v === undefined || v === null ? null : parseInterval(v, "checkIntervalMinutes");
 }
 
 function parseIds(v: unknown): number[] {
@@ -209,12 +217,13 @@ export async function createMonitor(env: Env, request: Request, now = Date.now()
   const url = parseUrl(body.url);
   const group = parseGroup(body.group);
   const timeoutMs = parseTimeout(body.timeoutMs);
+  const interval = parseMonitorInterval(body.checkIntervalMinutes);
   try {
     const row = await env.DB.prepare(
-      `INSERT INTO monitors (name, url, group_name, timeout_ms, created_at, observed_since)
-       VALUES (?, ?, ?, ?, ?, ?) RETURNING id`,
+      `INSERT INTO monitors (name, url, group_name, timeout_ms, check_interval_minutes, created_at, observed_since)
+       VALUES (?, ?, ?, ?, ?, ?, ?) RETURNING id`,
     )
-      .bind(name, url, group, timeoutMs, now, now)
+      .bind(name, url, group, timeoutMs, interval, now, now)
       .first<{ id: number }>();
     return getMonitor(env, row!.id, now);
   } catch (err) {
@@ -238,6 +247,9 @@ export async function updateMonitor(env: Env, id: number, request: Request, now 
   if ("name" in body) sets.push("name = ?"), params.push(parseName(body.name));
   if ("group" in body) sets.push("group_name = ?"), params.push(parseGroup(body.group));
   if ("timeoutMs" in body) sets.push("timeout_ms = ?"), params.push(parseTimeout(body.timeoutMs));
+  if ("checkIntervalMinutes" in body) {
+    sets.push("check_interval_minutes = ?"), params.push(parseMonitorInterval(body.checkIntervalMinutes));
+  }
 
   const statements: D1PreparedStatement[] = [];
   const newUrl = "url" in body ? parseUrl(body.url) : current.url;
