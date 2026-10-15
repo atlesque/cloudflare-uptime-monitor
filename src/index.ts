@@ -12,7 +12,7 @@ import {
   setMonitorMaintenance,
   updateMonitor,
 } from "./monitors";
-import { listGroups, removeGroup, renameGroup } from "./groups";
+import { createGroup, editGroup, listGroups, removeGroup, renameGroup } from "./groups";
 import { emailConfigured, ntfyConfigured, sendNtfy } from "./notifications";
 import { REPORT_CRON, reportHour, reportWindowOpen, runWeeklyReport } from "./report";
 import {
@@ -54,7 +54,12 @@ async function route(request: Request, env: Env, url: URL): Promise<Response> {
     return Response.json(await sendNtfyTest(env, request, sendNtfy));
   }
   if (path === "/api/settings/checks" && method === "PUT") return Response.json(await saveCheckSettings(env, request));
-  if (path === "/api/groups" && method === "GET") return Response.json(await listGroups(env));
+  if (path === "/api/groups") {
+    if (method === "GET") return Response.json(await listGroups(env));
+    if (method === "POST") return Response.json(await createGroup(env, request), { status: 201 });
+    throw new HttpError(405, "Method not allowed");
+  }
+  if (path === "/api/groups/edit" && method === "POST") return Response.json(await editGroup(env, request));
   if (path === "/api/groups/rename" && method === "POST") return Response.json(await renameGroup(env, request));
   if (path === "/api/groups/remove" && method === "POST") return Response.json(await removeGroup(env, request));
 

@@ -194,4 +194,67 @@ describe("groups", () => {
     expect(monitors.filter((m) => m.group === null)).toHaveLength(3);
     expect((await getMonitor(monitors[0].id)).group).toBeNull();
   });
+
+  it("adds an empty group, which stays listed until removed", async () => {
+    let res = await call("/api/groups", json("POST", { name: " Staging " }));
+    expect(res.status).toBe(201);
+    expect(res.body.groups).toContainEqual({ name: "Staging", monitors: 0 });
+    expect((await call("/api/groups", json("POST", { name: "Staging" }))).status).toBe(409);
+    expect((await call("/api/groups", json("POST", { name: "  " }))).status).toBe(400);
+    res = await call("/api/groups/remove", json("POST", { name: "Staging", confirm: true }));
+    expect(res.body.groups.map((g: any) => g.name)).toEqual(["Clients", "Internal"]);
+  });
+
+  it("adds a group with monitors, moving them from their old group", async () => {
+    const [a, , c] = await listMonitors();
+    const res = await call("/api/groups", json("POST", { name: "Mixed", monitorIds: [a.id, c.id] }));
+    expect(res.body.groups).toEqual([
+      { name: "Clients", monitors: 1 },
+      { name: "Internal", monitors: 0 },
+      { name: "Mixed", monitors: 2 },
+    ]);
+    expect((await getMonitor(c.id)).group).toBe("Mixed");
+  });
+
+  it("keeps a group after its last monitor leaves it", async () => {
+    const c = (await listMonitors()).find((m) => m.name === "C")!;
+    await api(`/api/monitors/${c.id}`, json("PATCH", { group: null }));
+    expect((await call("/api/groups")).body.groups).toContainEqual({ name: "Internal", monitors: 0 });
+  });
+
+  it("adds a group when a monitor is saved with a new group name", async () => {
+    await addMonitor({ name: "E", url: "https://e.example/", group: "Partners" });
+    expect((await call("/api/groups")).body.groups).toContainEqual({ name: "Partners", monitors: 1 });
+  });
+
+  it("edits a group's monitors and name in one request", async () => {
+    const byName = Object.fromEntries((await listMonitors()).map((m) => [m.name, m]));
+    const res = await call(
+      "/api/groups/edit",
+      json("POST", { name: "Clients", to: "Customers", monitorIds: [byName.B.id, byName.D.id] }),
+    );
+    expect(res.status).toBe(200);
+    expect(res.body.groups).toEqual([
+      { name: "Customers", monitors: 2 },
+      { name: "Internal", monitors: 1 },
+    ]);
+    expect((await getMonitor(byName.A.id)).group).toBeNull();
+    expect((await getMonitor(byName.D.id)).group).toBe("Customers");
+  });
+
+  it("merges when an edit renames onto an existing group", async () => {
+    const res = await call("/api/groups/edit", json("POST", { name: "Internal", to: "Clients" }));
+    expect(res.body.groups).toEqual([{ name: "Clients", monitors: 3 }]);
+  });
+
+  it("rejects edits to missing groups or monitors", async () => {
+    expect((await call("/api/groups/edit", json("POST", { name: "Nope", to: "X" }))).status).toBe(404);
+    expect((await call("/api/groups/edit", json("POST", { name: "Clients", monitorIds: [999] }))).status).toBe(404);
+    expect((await call("/api/groups/edit", json("POST", { name: "Clients", monitorIds: ["1"] }))).status).toBe(400);
+    expect((await call("/api/groups/edit", json("POST", { name: "Clients", to: "" }))).status).toBe(400);
+    expect((await call("/api/groups")).body.groups).toEqual([
+      { name: "Clients", monitors: 2 },
+      { name: "Internal", monitors: 1 },
+    ]);
+  });
 });
