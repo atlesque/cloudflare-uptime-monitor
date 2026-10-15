@@ -228,8 +228,9 @@ an authentication error, create an API token from the *Edit Cloudflare Workers* 
 - **Weekly report.** Emailed on Mondays at `REPORT_HOUR` (default 08:00) in your `TIME_ZONE` for the completed
   Monday–Sunday week, and only when that week had an operational outage. It runs on its own
   cron, separate from the checks (see [Schedules](#schedules)).
-- **Dashboard.** Built with Nuxt 4 and Nuxt UI, with light and dark themes. A Settings page for
-  ntfy (with a test notification), the default check interval, and renaming or removing groups. Status cards that
+- **Dashboard.** Built with Nuxt 4 and Nuxt UI, with light and dark themes. A Settings page with tabs
+  for notifications (ntfy, with a test notification), monitors (the default check interval) and
+  groups (add, rename, merge or remove a group, and pick its monitors). Status cards that
   double as filters, a table (a card list on phones) with search and filters, explicit and "all
   filtered" selection, bulk actions with confirmation, add/edit (a URL change must be confirmed
   and resets history), diagnostics-only *Check now*, and a detail panel with per-monitor incident
@@ -303,7 +304,9 @@ All routes require a valid Cloudflare Access assertion.
 | `DELETE` | `/api/settings/ntfy` | Forget the saved ntfy settings and use the Wrangler secrets |
 | `POST` | `/api/settings/ntfy/test` | Test notification; body as for `PUT` to test unsaved values |
 | `PUT` | `/api/settings/checks` | `{ defaultIntervalMinutes }`: one of 1, 2, 3, 5, 10, 15, 30, 60 |
-| `GET` | `/api/groups` | Groups with their monitor counts |
+| `GET` | `/api/groups` | Groups with their monitor counts, including empty groups |
+| `POST` | `/api/groups` | `{ name, monitorIds? }`; adds a group, moving those monitors into it |
+| `POST` | `/api/groups/edit` | `{ name, to?, monitorIds? }`; `monitorIds` sets the group's monitors exactly, `to` renames (merging into an existing group) |
 | `POST` | `/api/groups/rename` | `{ from, to }`; renaming onto an existing group merges them |
 | `POST` | `/api/groups/remove` | `{ name, confirm: true }`; the monitors stay, without a group |
 

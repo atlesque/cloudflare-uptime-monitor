@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import type { FormError } from "@nuxt/ui";
-import type { Monitor } from "~/types";
+import type { Group, Monitor } from "~/types";
 
 const props = defineProps<{ monitor: Monitor | null; groups: string[]; defaultInterval: number | null; intervals: number[] }>();
 const open = defineModel<boolean>("open", { required: true });
@@ -9,6 +9,10 @@ const emit = defineEmits<{ saved: [message: string] }>();
 const form = reactive({ name: "", url: "", group: "", timeout: 10, interval: "default", confirmUrlChange: false });
 const error = ref<string | null>(null);
 const saving = ref(false);
+
+// Groups can exist without monitors, so the suggestions also come from the groups list.
+const savedGroups = ref<string[]>([]);
+const groupOptions = computed(() => [...new Set([...props.groups, ...savedGroups.value])].sort((a, b) => a.localeCompare(b)));
 
 watch(open, (isOpen) => {
   if (!isOpen) return;
@@ -22,6 +26,9 @@ watch(open, (isOpen) => {
     confirmUrlChange: false,
   });
   error.value = null;
+  api<{ groups: Group[] }>("/api/groups")
+    .then((res) => (savedGroups.value = res.groups.map((g) => g.name)))
+    .catch(() => {});
 });
 
 const intervalItems = computed(() => [
@@ -100,7 +107,7 @@ async function submit() {
           <UFormField label="Group" name="group" hint="Optional">
             <UInput v-model="form.group" maxlength="50" list="group-options" class="w-full" />
             <datalist id="group-options">
-              <option v-for="g in groups" :key="g" :value="g" />
+              <option v-for="g in groupOptions" :key="g" :value="g" />
             </datalist>
           </UFormField>
           <UFormField label="Timeout" name="timeout" required>

@@ -201,7 +201,7 @@ export async function notificationRows() {
 
 export async function resetDb() {
   await env.DB.batch(
-    ["check_failures", "notifications", "incidents", "maintenance_periods", "weekly_reports", "monitors", "settings"].map((t) =>
+    ["check_failures", "notifications", "incidents", "maintenance_periods", "weekly_reports", "monitors", "groups", "settings"].map((t) =>
       env.DB.prepare(`DELETE FROM ${t}`),
     ),
   );
