@@ -29,25 +29,29 @@ export interface Metrics {
   uptimeInclusivePct: number | null;
 }
 
-export function computeMetrics(args: {
+export interface WindowArgs {
   from: number;
   to: number;
   observedSince: number;
   incidents: IncidentSpan[];
   maintenance: MaintenanceSpan[];
-}): Metrics {
+}
+
+/** Raw observed time and downtime in a window; `operationalMs` is observed time outside silent maintenance. */
+export interface Measurement {
+  observedMs: number;
+  operationalMs: number;
+  outages: number;
+  outagesInclusive: number;
+  downtimeMs: number;
+  downtimeInclusiveMs: number;
+}
+
+export function measureWindow(args: WindowArgs): Measurement {
   const start = Math.max(args.from, args.observedSince);
   const end = args.to;
   if (end <= start) {
-    return {
-      observedMs: 0,
-      outages: 0,
-      outagesInclusive: 0,
-      downtimeMs: 0,
-      downtimeInclusiveMs: 0,
-      uptimePct: null,
-      uptimeInclusivePct: null,
-    };
+    return { observedMs: 0, operationalMs: 0, outages: 0, outagesInclusive: 0, downtimeMs: 0, downtimeInclusiveMs: 0 };
   }
 
   const silent = union(
@@ -58,20 +62,28 @@ export function computeMetrics(args: {
   );
   const incidents = args.incidents.map((i) => clip([i.startedAt, i.endedAt ?? end], start, end)).filter(isInterval);
   const down = union(incidents);
-
-  const observedInclusive = end - start;
-  const observedOperational = observedInclusive - totalLength(silent);
   const downInclusive = totalLength(down);
-  const downOperational = downInclusive - overlapLength(down, silent);
 
   return {
-    observedMs: observedInclusive,
+    observedMs: end - start,
+    operationalMs: end - start - totalLength(silent),
     outages: incidents.filter((iv) => iv[1] - iv[0] - overlapLength([iv], silent) > 0).length,
     outagesInclusive: incidents.length,
-    downtimeMs: downOperational,
+    downtimeMs: downInclusive - overlapLength(down, silent),
     downtimeInclusiveMs: downInclusive,
-    uptimePct: observedOperational > 0 ? (100 * (observedOperational - downOperational)) / observedOperational : null,
-    uptimeInclusivePct: (100 * (observedInclusive - downInclusive)) / observedInclusive,
+  };
+}
+
+export function computeMetrics(args: WindowArgs): Metrics {
+  const m = measureWindow(args);
+  return {
+    observedMs: m.observedMs,
+    outages: m.outages,
+    outagesInclusive: m.outagesInclusive,
+    downtimeMs: m.downtimeMs,
+    downtimeInclusiveMs: m.downtimeInclusiveMs,
+    uptimePct: m.operationalMs > 0 ? (100 * (m.operationalMs - m.downtimeMs)) / m.operationalMs : null,
+    uptimeInclusivePct: m.observedMs > 0 ? (100 * (m.observedMs - m.downtimeInclusiveMs)) / m.observedMs : null,
   };
 }
 

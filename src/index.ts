@@ -23,6 +23,7 @@ import {
   sendNtfyTest,
 } from "./settings";
 import { getTimeZone, setTimeZone } from "./time";
+import { getDailyUptime } from "./uptime";
 
 async function route(request: Request, env: Env, url: URL): Promise<Response> {
   const { method } = request;
@@ -43,6 +44,8 @@ async function route(request: Request, env: Env, url: URL): Promise<Response> {
     if (method === "POST") return Response.json(await bulkAction(env, request));
     throw new HttpError(405, "Method not allowed");
   }
+
+  if (path === "/api/uptime" && method === "GET") return Response.json(await getDailyUptime(env));
 
   if (path === "/api/settings" && method === "GET") return Response.json(await getSettings(env));
   if (path === "/api/settings/ntfy") {

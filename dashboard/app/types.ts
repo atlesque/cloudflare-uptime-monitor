@@ -140,3 +140,15 @@ export interface Group {
   name: string;
   monitors: number;
 }
+
+/** One local calendar day of /api/uptime, across all monitors. Operational: silent maintenance is left out. */
+export interface DayUptime {
+  start: number;
+  end: number;
+  /** 0 when no monitor was observed that day. */
+  observedMs: number;
+  downtimeMs: number;
+  outages: number;
+  /** Monitors with downtime that day, most downtime first. */
+  down: { id: number; name: string; downtimeMs: number; outages: number }[];
+}

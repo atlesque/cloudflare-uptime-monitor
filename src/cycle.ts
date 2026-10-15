@@ -8,8 +8,10 @@ import { DAY } from "./time";
 
 export const CHECK_CRON = "* * * * *";
 
-/** Incidents and maintenance are kept for the rolling 30-day window, plus a day of slack. */
-const HISTORY_RETENTION_MS = 31 * DAY;
+/** Incidents and maintenance are kept for the 90-day uptime bar, plus a day of slack. */
+const HISTORY_RETENTION_MS = 91 * DAY;
+/** Notifications and failed-check details only need the 30-day window. */
+const LOG_RETENTION_MS = 31 * DAY;
 const REPORT_RETENTION_MS = 90 * DAY;
 
 export async function runCycle(env: Env, clock: () => number = Date.now): Promise<void> {
@@ -39,8 +41,8 @@ export async function pruneHistory(env: Env, now: number): Promise<void> {
   await env.DB.batch([
     env.DB.prepare(`DELETE FROM incidents WHERE ended_at IS NOT NULL AND ended_at < ?`).bind(cutoff),
     env.DB.prepare(`DELETE FROM maintenance_periods WHERE ended_at IS NOT NULL AND ended_at < ?`).bind(cutoff),
-    env.DB.prepare(`DELETE FROM notifications WHERE created_at < ?`).bind(cutoff),
-    env.DB.prepare(`DELETE FROM check_failures WHERE checked_at < ?`).bind(cutoff),
+    env.DB.prepare(`DELETE FROM notifications WHERE created_at < ?`).bind(now - LOG_RETENTION_MS),
+    env.DB.prepare(`DELETE FROM check_failures WHERE checked_at < ?`).bind(now - LOG_RETENTION_MS),
     env.DB.prepare(`DELETE FROM weekly_reports WHERE created_at < ?`).bind(now - REPORT_RETENTION_MS),
   ]);
 }
