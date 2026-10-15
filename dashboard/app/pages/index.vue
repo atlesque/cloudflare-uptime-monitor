@@ -176,7 +176,7 @@ onMounted(async () => {
       <h1 class="text-xl font-semibold text-highlighted">Monitors</h1>
       <span class="text-xs text-muted" aria-live="polite">
         <span v-if="refreshError" class="text-error">Refresh failed: {{ refreshError }}</span>
-        <template v-else-if="updatedAt">Updated {{ ago(updatedAt, now) }}</template>
+        <template v-else-if="updatedAt">Last updated {{ ago(updatedAt, now) }}</template>
         <USkeleton v-else class="inline-block h-3 w-24 align-middle" />
       </span>
       <UButton class="ms-auto" icon="i-lucide-plus" label="Add monitor" @click="openForm(null)" />
