@@ -37,6 +37,7 @@ interface MonitorRow {
   next_check_after: number | null;
   request_headers: string | null;
   check_location: string | null;
+  cache_bust: number;
 }
 
 interface FailureRow {
@@ -70,7 +71,7 @@ interface MaintenanceRow {
 const SELECT_MONITORS = `
   SELECT m.id, m.name, m.url, m.group_name, m.timeout_ms, m.check_interval_minutes, m.created_at, m.observed_since, m.state,
          m.last_checked_at, m.last_status, m.last_error, m.last_duration_ms, m.maintenance_mode,
-         m.next_check_after, m.request_headers, m.check_location, i.started_at AS outage_started_at, p.started_at AS maintenance_started_at
+         m.next_check_after, m.request_headers, m.check_location, m.cache_bust, i.started_at AS outage_started_at, p.started_at AS maintenance_started_at
     FROM monitors m
     LEFT JOIN incidents i ON i.monitor_id = m.id AND i.ended_at IS NULL
     LEFT JOIN maintenance_periods p ON p.monitor_id = m.id AND p.ended_at IS NULL`;
@@ -124,6 +125,8 @@ function toApi(row: MonitorRow, history: { incidents: IncidentRow[]; maintenance
     requestHeaders: toApiHeaders(row.request_headers),
     /** Location hint the checks run from; null follows CHECK_LOCATION. */
     checkLocation: row.check_location,
+    /** Each check adds a unique `_uptime` query parameter so a CDN can't answer from cache. */
+    cacheBust: row.cache_bust === 1,
     createdAt: row.created_at,
     observedSince: row.observed_since,
     state: row.state,
@@ -254,6 +257,12 @@ function parseCheckLocation(v: unknown): string | null {
   return v;
 }
 
+function parseCacheBust(v: unknown): number {
+  if (v === undefined || v === null) return 0;
+  if (typeof v !== "boolean") throw new HttpError(400, "cacheBust must be true or false");
+  return v ? 1 : 0;
+}
+
 function parseIds(v: unknown): number[] {
   if (!Array.isArray(v) || v.length === 0) throw new HttpError(400, "ids must be a non-empty array");
   if (v.length > MAX_BULK) throw new HttpError(400, `At most ${MAX_BULK} monitors per action`);
@@ -283,14 +292,15 @@ export async function createMonitor(env: Env, request: Request, now = Date.now()
   const interval = parseMonitorInterval(body.checkIntervalMinutes);
   const headers = parseRequestHeaders(body.requestHeaders);
   const location = parseCheckLocation(body.checkLocation);
+  const cacheBust = parseCacheBust(body.cacheBust);
   try {
     const row = await env.DB.prepare(
       `INSERT INTO monitors
          (name, url, group_name, timeout_ms, check_interval_minutes, request_headers, check_location,
-          created_at, observed_since)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING id`,
+          cache_bust, created_at, observed_since)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING id`,
     )
-      .bind(name, url, group, timeoutMs, interval, headers, location, now, now)
+      .bind(name, url, group, timeoutMs, interval, headers, location, cacheBust, now, now)
       .first<{ id: number }>();
     return getMonitor(env, row!.id, now);
   } catch (err) {
@@ -300,7 +310,8 @@ export async function createMonitor(env: Env, request: Request, now = Date.now()
 }
 
 /**
- * Edits name, group, timeout, interval, request headers and check location without touching history. A URL change must be
+ * Edits name, group, timeout, interval, request headers, check location and cache busting without
+ * touching history. A URL change must be
  * confirmed and starts a new observation period: state, incidents and
  * maintenance history are reset so old data is never attributed to the new URL.
  */
@@ -319,6 +330,7 @@ export async function updateMonitor(env: Env, id: number, request: Request, now 
   }
   if ("requestHeaders" in body) sets.push("request_headers = ?"), params.push(parseRequestHeaders(body.requestHeaders));
   if ("checkLocation" in body) sets.push("check_location = ?"), params.push(parseCheckLocation(body.checkLocation));
+  if ("cacheBust" in body) sets.push("cache_bust = ?"), params.push(parseCacheBust(body.cacheBust));
 
   const statements: D1PreparedStatement[] = [];
   const newUrl = "url" in body ? parseUrl(body.url) : current.url;
@@ -366,9 +378,17 @@ export async function updateMonitor(env: Env, id: number, request: Request, now 
 
 /** Diagnostics-only probe: reports the result without recording anything. */
 export async function checkNow(env: Env, id: number) {
-  const m = await env.DB.prepare(`SELECT url, timeout_ms, request_headers, check_location FROM monitors WHERE id = ?`)
+  const m = await env.DB.prepare(
+    `SELECT url, timeout_ms, request_headers, check_location, cache_bust FROM monitors WHERE id = ?`,
+  )
     .bind(id)
-    .first<{ url: string; timeout_ms: number; request_headers: string | null; check_location: string | null }>();
+    .first<{
+      url: string;
+      timeout_ms: number;
+      request_headers: string | null;
+      check_location: string | null;
+      cache_bust: number;
+    }>();
   if (!m) throw new HttpError(404, "Monitor not found");
   const checkedAt = Date.now();
   const [result] = await runProbes(env, [
@@ -377,6 +397,7 @@ export async function checkNow(env: Env, id: number) {
       timeoutMs: m.timeout_ms,
       headers: parseStoredHeaders(m.request_headers),
       location: m.check_location,
+      cacheBust: m.cache_bust === 1,
     },
   ]);
   const d = result.diagnostics;

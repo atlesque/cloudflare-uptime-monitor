@@ -9,6 +9,10 @@
 //
 // A monitor's extra request headers (for example a secret header a site's WAF lets through)
 // are only sent to the monitor's own host, so a redirect elsewhere never sees them.
+//
+// With cache busting on, the first request adds a unique `_uptime` query parameter so a CDN
+// can't answer with a cached copy (Akamai can keep serving the last 200 while the origin is
+// down). Redirect targets are followed as the site sent them.
 
 import type { Budget } from "./budget";
 import { disallowedHostReason } from "./url";
@@ -29,7 +33,11 @@ export interface ProbeRequest {
   timeoutMs: number;
   /** Extra request headers, sent only to the monitor URL's host. */
   headers?: [string, string][];
+  /** Adds a unique `_uptime` query parameter to the URL. */
+  cacheBust?: boolean;
 }
+
+export const CACHE_BUST_PARAM = "_uptime";
 
 export interface RedirectHop {
   url: string;
@@ -61,13 +69,13 @@ export interface ProbeResult {
 }
 
 export async function probe(
-  { url, timeoutMs, headers: extraHeaders = [] }: ProbeRequest,
+  { url, timeoutMs, headers: extraHeaders = [], cacheBust = false }: ProbeRequest,
   budget?: Budget,
 ): Promise<ProbeResult> {
   const started = Date.now();
   const signal = AbortSignal.timeout(timeoutMs);
   const redirects: RedirectHop[] = [];
-  let current = url;
+  let current = cacheBust ? withCacheBust(url, started) : url;
   const result = (ok: boolean, status: number | null, error: string | null): ProbeResult => ({
     ok,
     status,
@@ -130,6 +138,14 @@ export async function probe(
     if (signal.aborted) return failure(null, `Timeout after ${timeoutMs} ms`);
     return failure(null, err instanceof Error ? err.message : String(err));
   }
+}
+
+/** Appends `_uptime=<time>` to the query string, keeping the existing query as written. */
+export function withCacheBust(url: string, time: number): string {
+  const u = new URL(url);
+  const param = `${CACHE_BUST_PARAM}=${time}`;
+  u.search = u.search.length > 1 ? `${u.search}&${param}` : `?${param}`;
+  return u.toString();
 }
 
 /**

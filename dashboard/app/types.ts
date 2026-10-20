@@ -37,6 +37,8 @@ export interface Monitor {
   requestHeaders: RequestHeader[];
   /** Location hint the checks run from; null follows the deployment's default. */
   checkLocation: string | null;
+  /** Each check adds a unique `_uptime` query parameter so a CDN can't answer from cache. */
+  cacheBust: boolean;
   createdAt: number;
   observedSince: number;
   state: MonitorState;

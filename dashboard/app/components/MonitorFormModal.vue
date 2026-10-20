@@ -17,6 +17,7 @@ const form = reactive({
   interval: "default",
   headers: [] as RequestHeader[],
   location: "default",
+  cacheBust: false,
   confirmUrlChange: false,
 });
 const error = ref<string | null>(null);
@@ -37,6 +38,7 @@ watch(open, (isOpen) => {
     interval: m?.checkIntervalMinutes == null ? "default" : String(m.checkIntervalMinutes),
     headers: (m?.requestHeaders ?? []).map((h) => ({ ...h })),
     location: m?.checkLocation ?? "default",
+    cacheBust: m?.cacheBust ?? false,
     confirmUrlChange: false,
   });
   error.value = null;
@@ -86,6 +88,7 @@ async function submit() {
     timeoutMs: Math.round(form.timeout * 1000),
     checkIntervalMinutes: form.interval === "default" ? null : Number(form.interval),
     requestHeaders: form.headers,
+    cacheBust: form.cacheBust,
   };
   // Only sent when it can apply, so saving never fails on a deployment without the Prober.
   if (me.value?.checkLocations.available) body.checkLocation = form.location === "default" ? null : form.location;
@@ -130,6 +133,13 @@ async function submit() {
             <UCheckbox v-model="form.confirmUrlChange" label="I understand the history will be reset" />
           </UFormField>
         </template>
+        <UFormField name="cacheBust">
+          <UCheckbox
+            v-model="form.cacheBust"
+            label="Bypass caches"
+            description="Adds a unique ?_uptime= parameter to the URL on each check, so a CDN such as Akamai can't answer with a cached copy while the site is down."
+          />
+        </UFormField>
         <UFormField label="Check interval" name="interval" description="A monitor goes down after two failed checks in a row.">
           <USelect v-model="form.interval" :items="intervalItems" class="w-full" />
         </UFormField>

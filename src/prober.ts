@@ -64,8 +64,8 @@ export async function runProbes(env: Env, requests: LocatedRequest[], budget?: B
   const results = new Array<ProbeResult>(requests.length);
   for (const [location, indexes] of groups) {
     const batch = indexes.map((i): ProbeRequest => {
-      const { url, timeoutMs, headers } = requests[i];
-      return { url, timeoutMs, headers };
+      const { location: _, ...request } = requests[i];
+      return request;
     });
     const out = await probeFrom(env, location, batch, budget);
     indexes.forEach((i, j) => (results[i] = out[j]));
