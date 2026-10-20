@@ -58,7 +58,21 @@ export interface Incident {
   notifyMaintenanceMs: number;
 }
 
+export interface HourUptime {
+  start: number;
+  end: number;
+  /** Operational time observed in the hour; 0 before the monitor was observed. */
+  observedMs: number;
+  downtimeMs: number;
+  /** Time in silent maintenance, left out of observedMs. */
+  maintenanceMs: number;
+  /** Incidents with downtime in this hour. */
+  incidentIds: number[];
+}
+
 export interface MonitorDetail extends Monitor {
+  /** The last 24 clock hours, oldest first; the last one runs until now. */
+  last24h: HourUptime[];
   incidents: Incident[];
   failures: FailureSummary[];
 }

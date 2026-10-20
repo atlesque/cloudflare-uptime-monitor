@@ -39,6 +39,9 @@ watch(
 
 defineExpose({ reload: load });
 
+/** Incidents of the hour being read in the 24-hour strip. */
+const highlightedIncidents = ref<number[]>([]);
+
 // Full responses of failed checks load on demand; they can be up to 16 KB each.
 const expandedFailure = ref<number | null>(null);
 const failureCache = reactive(new Map<number, FailedCheck>());
@@ -99,6 +102,10 @@ function maintenanceText(silentMs: number, notifyMs: number) {
         </div>
         <div class="space-y-2">
           <USkeleton class="h-4 w-24" />
+          <USkeleton class="h-28 w-full rounded-lg" />
+        </div>
+        <div class="space-y-2">
+          <USkeleton class="h-4 w-24" />
           <div class="grid grid-cols-2 gap-3 sm:grid-cols-3">
             <div v-for="i in 3" :key="i" class="space-y-2 rounded-lg border border-default p-3">
               <USkeleton class="h-3 w-14" />
@@ -131,6 +138,8 @@ function maintenanceText(silentMs: number, notifyMs: number) {
           />
           <UButton icon="i-lucide-pencil" color="neutral" variant="outline" label="Edit" @click="emit('edit', detail)" />
         </div>
+
+        <HourlyUptime v-model:highlighted="highlightedIncidents" :hours="detail.last24h" :incidents="detail.incidents" />
 
         <section>
           <h3 class="mb-2 text-sm font-medium text-muted">Last 30 days</h3>
@@ -248,7 +257,10 @@ function maintenanceText(silentMs: number, notifyMs: number) {
                 class="absolute -start-[1.6rem] top-1.5 size-2.5 rounded-full ring-4 ring-(--ui-bg)"
                 :class="incident.ongoing ? 'bg-error animate-pulse' : 'bg-neutral-400'"
               />
-              <div class="rounded-lg border border-default p-3 text-sm">
+              <div
+                class="rounded-lg border p-3 text-sm transition-colors"
+                :class="highlightedIncidents.includes(incident.id) ? 'border-error/50 bg-error/5' : 'border-default'"
+              >
                 <div class="flex flex-wrap items-center justify-between gap-2">
                   <span class="font-medium text-highlighted">{{ formatFullTime(incident.startedAt) }}</span>
                   <UBadge v-if="incident.ongoing" color="error" variant="subtle" size="sm">Ongoing · {{ formatDuration(incident.durationMs) }}</UBadge>

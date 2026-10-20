@@ -9,6 +9,7 @@ import { parseRequestHeaders, parseStoredHeaders, toApiHeaders } from "./headers
 import { runProbes } from "./prober";
 import { parseInterval } from "./settings";
 import { DAY } from "./time";
+import { hourlyUptime } from "./uptime";
 import { normalizeMonitorUrl } from "./url";
 
 export const DEFAULT_TIMEOUT_MS = 10_000;
@@ -164,6 +165,14 @@ export async function getMonitor(env: Env, id: number, now = Date.now()) {
   const maintenance = toMaintenanceSpans(h.maintenance);
   return {
     ...toApi(row, h, now),
+    last24h: hourlyUptime(
+      {
+        observedSince: row.observed_since,
+        incidents: h.incidents.map((i) => ({ id: i.id, startedAt: i.started_at, endedAt: i.ended_at })),
+        maintenance,
+      },
+      now,
+    ),
     incidents: h.incidents.map((i) => {
       const overlap = maintenanceOverlap({ startedAt: i.started_at, endedAt: i.ended_at }, maintenance, now);
       return {
