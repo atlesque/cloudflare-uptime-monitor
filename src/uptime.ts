@@ -1,11 +1,12 @@
-// Daily uptime across all monitors, for the dashboard's overview bar.
+// Daily uptime across all monitors, for the dashboard's overview bar,
+// and hourly uptime of one monitor, for its detail panel.
 //
 // Days are local calendar days in the configured TIME_ZONE; today runs until now.
 // Figures are operational: time in silent maintenance is left out, as in the 30-day metrics.
 
-import { measureWindow } from "./metrics";
+import { measureWindow, type MaintenanceSpan } from "./metrics";
 import { loadHistory, toIncidentSpans, toMaintenanceSpans } from "./monitors";
-import { addLocalDays } from "./time";
+import { addLocalDays, HOUR } from "./time";
 
 export const UPTIME_DAYS = 90;
 
@@ -51,4 +52,52 @@ export async function getDailyUptime(env: Env, now = Date.now(), days = UPTIME_D
     return day;
   });
   return { days: result, now };
+}
+
+export const UPTIME_HOURS = 24;
+
+export interface HourUptime {
+  start: number;
+  end: number;
+  /** Operational time observed in the hour; 0 before the monitor was observed. */
+  observedMs: number;
+  downtimeMs: number;
+  /** Time in silent maintenance, which is left out of observedMs. */
+  maintenanceMs: number;
+  /** Incidents with operational downtime in this hour, so the dashboard can join hours of one outage. */
+  incidentIds: number[];
+}
+
+/**
+ * One monitor's uptime per clock hour over the last 24 hours; the last hour runs until now.
+ * Hours are whole UTC hours, which are whole local hours in every zone with a whole-hour offset.
+ */
+export function hourlyUptime(
+  args: {
+    observedSince: number;
+    incidents: { id: number; startedAt: number; endedAt: number | null }[];
+    maintenance: MaintenanceSpan[];
+  },
+  now: number,
+  hours = UPTIME_HOURS,
+): HourUptime[] {
+  const first = Math.floor(now / HOUR) * HOUR - (hours - 1) * HOUR;
+  return Array.from({ length: hours }, (_, i) => {
+    const start = first + i * HOUR;
+    const end = Math.min(start + HOUR, now);
+    const window = { from: start, to: end, observedSince: args.observedSince, maintenance: args.maintenance };
+    const m = measureWindow({ ...window, incidents: args.incidents });
+    const incidentIds = args.incidents
+      .filter((incident) => measureWindow({ ...window, incidents: [incident] }).downtimeMs > 0)
+      .map((incident) => incident.id)
+      .sort((a, b) => a - b);
+    return {
+      start,
+      end,
+      observedMs: m.operationalMs,
+      downtimeMs: m.downtimeMs,
+      maintenanceMs: m.observedMs - m.operationalMs,
+      incidentIds,
+    };
+  });
 }
