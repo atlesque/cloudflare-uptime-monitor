@@ -60,6 +60,7 @@ export interface Diagnosis {
   source: string | null;
   blocked: boolean;
   reference: string | null;
+  references: { label: string; value: string }[];
   signals: string[];
 }
 
