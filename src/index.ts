@@ -26,6 +26,7 @@ import {
 } from "./settings";
 import { getTimeZone, setTimeZone } from "./time";
 import { getDailyUptime } from "./uptime";
+import { defaultLocation } from "./prober";
 
 export { Prober } from "./prober";
 
@@ -38,6 +39,8 @@ async function route(request: Request, env: Env, url: URL): Promise<Response> {
       timeZone: getTimeZone(),
       notifications: { email: emailConfigured(env), ntfy: await ntfyConfigured(env) },
       akamaiTroubleshooterUrl: (await loadDiagnosticsSettings(env)).akamaiTroubleshooterUrl,
+      // Per-monitor check locations need the PROBER binding; `default` is CHECK_LOCATION.
+      checkLocations: { available: !!env.PROBER, default: defaultLocation(env) },
     });
   }
   if (path === "/api/monitors") {

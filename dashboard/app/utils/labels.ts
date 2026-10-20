@@ -11,3 +11,16 @@ export const MAINTENANCE_DESCRIPTIONS: Record<Exclude<MaintenanceMode, "none">, 
   notify: "Maintenance with notifications: checks and alerts continue",
   silent: "Maintenance without notifications: checks continue, alerts are suppressed",
 };
+
+/** Durable Object location hints that checks can run from. */
+export const LOCATION_LABELS: Record<string, string> = {
+  weur: "Western Europe",
+  eeur: "Eastern Europe",
+  enam: "Eastern North America",
+  wnam: "Western North America",
+  sam: "South America",
+  apac: "Asia-Pacific",
+  oc: "Oceania",
+  afr: "Africa",
+  me: "Middle East",
+};

@@ -35,6 +35,8 @@ export interface Monitor {
   checkIntervalMinutes: number | null;
   /** Extra headers sent with each check, only to the monitor URL's host. */
   requestHeaders: RequestHeader[];
+  /** Location hint the checks run from; null follows the deployment's default. */
+  checkLocation: string | null;
   /** Each check adds a unique `_uptime` query parameter so a CDN can't answer from cache. */
   cacheBust: boolean;
   createdAt: number;
@@ -116,6 +118,8 @@ export interface Me {
   notifications: { email: boolean; ntfy: boolean };
   /** Settings > Monitors: a page to look up Akamai references, or null when not set. */
   akamaiTroubleshooterUrl: string | null;
+  /** Whether checks can run from a chosen location, and the default location (null: anywhere). */
+  checkLocations: { available: boolean; default: string | null };
 }
 
 export interface BulkResult {

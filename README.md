@@ -265,8 +265,14 @@ The hint is best effort, and the IPs are still shared Cloudflare addresses, so a
 still need an exception, for example on a secret request header. If the Durable Object can't be
 reached, that run's checks fall back to the Worker rather than being skipped.
 
-One call a minute to the Durable Object is about 1,440 requests a day, far within the Free plan's
-100,000 a day.
+Each monitor can also pick its own location (**Check from** in the edit form); monitors left on
+*Default* use `CHECK_LOCATION`.
+
+**Cost.** There is one Durable Object per location hint, named after it, so at most nine ever
+exist, however many monitors you have. Each run calls each location in use once, so even with all
+nine in use that is about 13,000 calls a day, within the Free plan's 100,000 a day. An object is
+only billed for duration while a run's checks are in flight; with one location, a run that takes
+2 seconds comes to about 370 GB-s a day, against 13,000 a day on the Free plan.
 
 ## Layout
 
@@ -321,15 +327,15 @@ All routes require a valid Cloudflare Access assertion.
 | Method | Path | Notes |
 | --- | --- | --- |
 | `GET` | `/api/monitors` | All monitors with 30-day metrics |
-| `POST` | `/api/monitors` | `{ name, url, group?, timeoutMs?, checkIntervalMinutes?, requestHeaders?, cacheBust? }`; `requestHeaders` is up to 10 `{ name, value }`, `cacheBust` a boolean |
+| `POST` | `/api/monitors` | `{ name, url, group?, timeoutMs?, checkIntervalMinutes?, requestHeaders?, checkLocation?, cacheBust? }`; `requestHeaders` is up to 10 `{ name, value }`, `checkLocation` a location hint such as `weur` or `null` for the default, `cacheBust` a boolean |
 | `GET` | `/api/monitors/:id` | Includes the 30-day incident list and recent failed checks |
 | `GET` | `/api/monitors/:id/failures/:failureId` | One failed check with its headers, body and diagnosis |
-| `PATCH` | `/api/monitors/:id` | `{ name?, group?, timeoutMs?, checkIntervalMinutes?, requestHeaders?, cacheBust?, url?, confirmUrlChange? }` |
+| `PATCH` | `/api/monitors/:id` | `{ name?, group?, timeoutMs?, checkIntervalMinutes?, requestHeaders?, checkLocation?, cacheBust?, url?, confirmUrlChange? }` |
 | `DELETE` | `/api/monitors/:id?confirm=true` | Permanent; removes incident history |
 | `POST` | `/api/monitors/:id/check` | Diagnostics only (includes the response when it fails); records nothing |
 | `PUT` | `/api/monitors/:id/maintenance` | `{ mode: "notify" \| "silent" \| "none" }` |
 | `POST` | `/api/monitors/bulk` | `{ action: "maintenance" \| "end-maintenance" \| "delete", mode?, ids, confirm: true }` |
-| `GET` | `/api/me` | Which notification channels are configured |
+| `GET` | `/api/me` | Which notification channels are configured, and the default check location |
 | `GET` | `/api/settings` | ntfy settings (never the token or secret values) and the default check interval |
 | `PUT` | `/api/settings/ntfy` | `{ url?, topic, token?, clearToken? }`; empty topic turns ntfy off |
 | `DELETE` | `/api/settings/ntfy` | Forget the saved ntfy settings and use the Wrangler secrets |

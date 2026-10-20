@@ -5,6 +5,7 @@ import type { Group, Monitor, RequestHeader } from "~/types";
 const props = defineProps<{ monitor: Monitor | null; groups: string[]; defaultInterval: number | null; intervals: number[] }>();
 const open = defineModel<boolean>("open", { required: true });
 const emit = defineEmits<{ saved: [message: string] }>();
+const { me } = useMe();
 
 const MAX_HEADERS = 10;
 
@@ -15,6 +16,7 @@ const form = reactive({
   timeout: 10,
   interval: "default",
   headers: [] as RequestHeader[],
+  location: "default",
   cacheBust: false,
   confirmUrlChange: false,
 });
@@ -35,6 +37,7 @@ watch(open, (isOpen) => {
     timeout: (m?.timeoutMs ?? 10_000) / 1000,
     interval: m?.checkIntervalMinutes == null ? "default" : String(m.checkIntervalMinutes),
     headers: (m?.requestHeaders ?? []).map((h) => ({ ...h })),
+    location: m?.checkLocation ?? "default",
     cacheBust: m?.cacheBust ?? false,
     confirmUrlChange: false,
   });
@@ -48,6 +51,14 @@ const intervalItems = computed(() => [
   { label: props.defaultInterval ? `Default (${formatInterval(props.defaultInterval)})` : "Default", value: "default" },
   ...props.intervals.map((n) => ({ label: formatInterval(n).replace(/^every/, "Every"), value: String(n) })),
 ]);
+
+const locationItems = computed(() => {
+  const fallback = me.value?.checkLocations.default;
+  return [
+    { label: `Default (${fallback ? LOCATION_LABELS[fallback] ?? fallback : "anywhere"})`, value: "default" },
+    ...Object.entries(LOCATION_LABELS).map(([value, label]) => ({ label, value })),
+  ];
+});
 
 const urlChanged = computed(() => !!props.monitor && form.url.trim() !== props.monitor.url);
 
@@ -79,6 +90,8 @@ async function submit() {
     requestHeaders: form.headers,
     cacheBust: form.cacheBust,
   };
+  // Only sent when it can apply, so saving never fails on a deployment without the Prober.
+  if (me.value?.checkLocations.available) body.checkLocation = form.location === "default" ? null : form.location;
   saving.value = true;
   error.value = null;
   try {
@@ -129,6 +142,14 @@ async function submit() {
         </UFormField>
         <UFormField label="Check interval" name="interval" description="A monitor goes down after two failed checks in a row.">
           <USelect v-model="form.interval" :items="intervalItems" class="w-full" />
+        </UFormField>
+        <UFormField
+          v-if="me?.checkLocations.available"
+          label="Check from"
+          name="location"
+          description="Region the checks run from. Pick one a site's firewall allows."
+        >
+          <USelect v-model="form.location" :items="locationItems" class="w-full" />
         </UFormField>
         <div class="grid gap-4 sm:grid-cols-2">
           <UFormField label="Group" name="group" hint="Optional">

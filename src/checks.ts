@@ -28,6 +28,7 @@ interface CheckRow {
   maintenance_mode: MaintenanceMode;
   check_token: string | null;
   request_headers: string | null;
+  check_location: string | null;
   cache_bust: number;
   outage_started_at: number | null;
   last_checked_at: number | null;
@@ -47,7 +48,8 @@ export async function runChecks(env: Env, budget: Budget, now: () => number = Da
   // Least recently checked first, so monitors deferred by the budget go first next time.
   const { results: rows } = await env.DB.prepare(
     `SELECT m.id, m.name, m.url, m.group_name, m.timeout_ms, m.state, m.consecutive_failures,
-            m.consecutive_successes, m.maintenance_mode, m.check_token, m.request_headers, m.cache_bust, i.started_at AS outage_started_at,
+            m.consecutive_successes, m.maintenance_mode, m.check_token, m.request_headers, m.check_location,
+            m.cache_bust, i.started_at AS outage_started_at,
             m.last_checked_at, COALESCE(m.check_interval_minutes, ?) AS interval_minutes, m.next_check_after
        FROM monitors m
        LEFT JOIN incidents i ON i.monitor_id = m.id AND i.ended_at IS NULL
@@ -69,6 +71,7 @@ export async function runChecks(env: Env, budget: Budget, now: () => number = Da
       url: m.url,
       timeoutMs: m.timeout_ms,
       headers: parseStoredHeaders(m.request_headers),
+      location: m.check_location,
       cacheBust: m.cache_bust === 1,
     })),
     budget,
