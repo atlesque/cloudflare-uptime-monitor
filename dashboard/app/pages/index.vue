@@ -236,6 +236,17 @@ onMounted(async () => {
       </p>
     </footer>
 
+    <!-- Overlays share a z-index and stack in this order, so the detail panel goes first:
+         the edit and check dialogs it opens must appear above it. -->
+    <MonitorDetailSlideover
+      ref="detail"
+      v-model:open="detailOpen"
+      :monitor-id="detailId"
+      :default-interval="settings?.checks.defaultIntervalMinutes ?? null"
+      :checking="detailId != null && checking.has(detailId)"
+      @edit="openForm"
+      @check="checkNow"
+    />
     <MonitorFormModal
       v-model:open="formOpen"
       :monitor="editing"
@@ -246,14 +257,5 @@ onMounted(async () => {
     />
     <ConfirmModal v-model:open="confirmOpen" :options="confirmOptions" />
     <CheckResultModal v-model:open="checkOpen" :monitor="checkResult?.monitor ?? null" :result="checkResult?.result ?? null" />
-    <MonitorDetailSlideover
-      ref="detail"
-      v-model:open="detailOpen"
-      :monitor-id="detailId"
-      :default-interval="settings?.checks.defaultIntervalMinutes ?? null"
-      :checking="detailId != null && checking.has(detailId)"
-      @edit="openForm"
-      @check="checkNow"
-    />
   </UContainer>
 </template>
