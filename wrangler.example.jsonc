@@ -21,6 +21,11 @@
   // They are matched by exact string in src/, so don't change them.
   "triggers": { "crons": ["* * * * *", "*/5 * * * *"] },
 
+  // Checks run from a Durable Object in the region set by CHECK_LOCATION below. Keep these two
+  // blocks even when CHECK_LOCATION is empty.
+  "durable_objects": { "bindings": [{ "name": "PROBER", "class_name": "Prober" }] },
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["Prober"] }],
+
   "d1_databases": [
     {
       "binding": "DB",
@@ -76,6 +81,13 @@
 
     // Workers Free allows 50 external subrequests per invocation (each redirect hop counts).
     // Raise this on a paid plan (limit 1000) to monitor more sites.
-    "EXTERNAL_SUBREQUEST_LIMIT": "50"
+    "EXTERNAL_SUBREQUEST_LIMIT": "50",
+
+    // Where checks run from. Scheduled Workers run anywhere in Cloudflare's network, so without
+    // this, checks reach sites from IPs all over the world, and some WAFs block those on
+    // reputation or location. A Durable Object location hint ("weur", "eeur", "enam", "wnam",
+    // "sam", "apac", "oc", "afr", "me") runs them from that region. Empty runs them from
+    // wherever the Worker runs.
+    "CHECK_LOCATION": ""
   }
 }

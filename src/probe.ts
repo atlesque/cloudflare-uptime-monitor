@@ -6,6 +6,9 @@
 // A failed check also returns diagnostics: the redirect chain, the response headers and
 // the start of the body, so block pages (Akamai, Cloudflare) and origin errors can be
 // told apart.
+//
+// A monitor's extra request headers (for example a secret header a site's WAF lets through)
+// are only sent to the monitor's own host, so a redirect elsewhere never sees them.
 
 import type { Budget } from "./budget";
 import { disallowedHostReason } from "./url";
@@ -15,7 +18,18 @@ export const MAX_REDIRECTS = 5;
 export const MAX_BODY_BYTES = 16 * 1024;
 /** Longest Retry-After the scheduler honors before checking again anyway. */
 export const MAX_RETRY_AFTER_MS = 30 * 60_000;
+// Workers allow 6 simultaneous outbound connections; further fetches queue
+// inside the runtime while their timeout is already running. Limiting here
+// keeps each probe's timeout measuring only its own request.
+const PROBE_CONCURRENCY = 6;
 const USER_AGENT = "CloudflareUptimeMonitor/1.0 (+https://github.com/atlesque/cloudflare-uptime-monitor)";
+
+export interface ProbeRequest {
+  url: string;
+  timeoutMs: number;
+  /** Extra request headers, sent only to the monitor URL's host. */
+  headers?: [string, string][];
+}
 
 export interface RedirectHop {
   url: string;
@@ -46,7 +60,10 @@ export interface ProbeResult {
   retryAfterMs?: number;
 }
 
-export async function probe(url: string, timeoutMs: number, budget?: Budget): Promise<ProbeResult> {
+export async function probe(
+  { url, timeoutMs, headers: extraHeaders = [] }: ProbeRequest,
+  budget?: Budget,
+): Promise<ProbeResult> {
   const started = Date.now();
   const signal = AbortSignal.timeout(timeoutMs);
   const redirects: RedirectHop[] = [];
@@ -77,7 +94,7 @@ export async function probe(url: string, timeoutMs: number, budget?: Budget): Pr
         method: "GET",
         redirect: "manual",
         signal,
-        headers: { "User-Agent": USER_AGENT },
+        headers: requestHeaders(url, current, extraHeaders),
       });
 
       const location = res.headers.get("Location");
@@ -113,6 +130,33 @@ export async function probe(url: string, timeoutMs: number, budget?: Budget): Pr
     if (signal.aborted) return failure(null, `Timeout after ${timeoutMs} ms`);
     return failure(null, err instanceof Error ? err.message : String(err));
   }
+}
+
+/**
+ * Headers for one hop. Extra headers go only to the monitor URL's host, and not over plain
+ * HTTP when the monitor URL is HTTPS.
+ */
+export function requestHeaders(monitorUrl: string, hopUrl: string, extra: [string, string][]): Headers {
+  const headers = new Headers({ "User-Agent": USER_AGENT });
+  const from = new URL(monitorUrl);
+  const to = new URL(hopUrl);
+  const sameSite = to.hostname === from.hostname && (to.protocol === "https:" || from.protocol === "http:");
+  if (sameSite) for (const [name, value] of extra) headers.set(name, value);
+  return headers;
+}
+
+/** Probes at most PROBE_CONCURRENCY requests at a time; results are in request order. */
+export async function probeMany(requests: ProbeRequest[], budget?: Budget): Promise<ProbeResult[]> {
+  const out = new Array<ProbeResult>(requests.length);
+  let next = 0;
+  const worker = async () => {
+    while (next < requests.length) {
+      const i = next++;
+      out[i] = await probe(requests[i], budget);
+    }
+  };
+  await Promise.all(Array.from({ length: Math.min(PROBE_CONCURRENCY, requests.length) }, worker));
+  return out;
 }
 
 interface Body {

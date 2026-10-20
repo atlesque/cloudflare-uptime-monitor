@@ -17,6 +17,8 @@ export default defineConfig({
           // The report and time tests assume Europe/Brussels week boundaries.
           TIME_ZONE: "Europe/Brussels",
           REPORT_HOUR: "8",
+          // Checks go through the Prober Durable Object, as in a deployment that sets this.
+          CHECK_LOCATION: "weur",
         },
       },
     })),

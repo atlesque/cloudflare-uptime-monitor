@@ -1,12 +1,22 @@
 <script setup lang="ts">
 import type { FormError } from "@nuxt/ui";
-import type { Group, Monitor } from "~/types";
+import type { Group, Monitor, RequestHeader } from "~/types";
 
 const props = defineProps<{ monitor: Monitor | null; groups: string[]; defaultInterval: number | null; intervals: number[] }>();
 const open = defineModel<boolean>("open", { required: true });
 const emit = defineEmits<{ saved: [message: string] }>();
 
-const form = reactive({ name: "", url: "", group: "", timeout: 10, interval: "default", confirmUrlChange: false });
+const MAX_HEADERS = 10;
+
+const form = reactive({
+  name: "",
+  url: "",
+  group: "",
+  timeout: 10,
+  interval: "default",
+  headers: [] as RequestHeader[],
+  confirmUrlChange: false,
+});
 const error = ref<string | null>(null);
 const saving = ref(false);
 
@@ -23,6 +33,7 @@ watch(open, (isOpen) => {
     group: m?.group ?? "",
     timeout: (m?.timeoutMs ?? 10_000) / 1000,
     interval: m?.checkIntervalMinutes == null ? "default" : String(m.checkIntervalMinutes),
+    headers: (m?.requestHeaders ?? []).map((h) => ({ ...h })),
     confirmUrlChange: false,
   });
   error.value = null;
@@ -45,6 +56,11 @@ function validate(state: typeof form): FormError[] {
   if (!Number.isInteger(state.timeout) || state.timeout < 1 || state.timeout > 30) {
     errors.push({ name: "timeout", message: "Between 1 and 30 seconds" });
   }
+  state.headers.forEach((h, i) => {
+    if (!/^[!#$%&'*+.^_`|~0-9A-Za-z-]+$/.test(h.name.trim())) {
+      errors.push({ name: `header-${i}`, message: "Enter a header name without spaces" });
+    }
+  });
   if (urlChanged.value && !state.confirmUrlChange) {
     errors.push({ name: "confirmUrlChange", message: "Confirm the URL change to continue" });
   }
@@ -58,6 +74,7 @@ async function submit() {
     group: form.group.trim() || null,
     timeoutMs: Math.round(form.timeout * 1000),
     checkIntervalMinutes: form.interval === "default" ? null : Number(form.interval),
+    requestHeaders: form.headers,
   };
   saving.value = true;
   error.value = null;
@@ -114,6 +131,36 @@ async function submit() {
             <UInputNumber v-model="form.timeout" :min="1" :max="30" :step="1" class="w-full" :format-options="{ style: 'unit', unit: 'second', unitDisplay: 'short' }" />
           </UFormField>
         </div>
+        <UFormField
+          label="Request headers"
+          hint="Optional"
+          description="Sent with each check, only to this site's host. Use it for a secret header that the site's firewall lets through."
+        >
+          <div class="space-y-2">
+            <UFormField v-for="(h, i) in form.headers" :key="i" :name="`header-${i}`">
+              <div class="flex gap-2">
+                <UInput v-model="h.name" placeholder="X-Uptime-Token" maxlength="100" class="w-2/5" aria-label="Header name" />
+                <UInput v-model="h.value" placeholder="Value" maxlength="1000" class="min-w-0 flex-1" aria-label="Header value" />
+                <UButton
+                  icon="i-lucide-x"
+                  color="neutral"
+                  variant="ghost"
+                  :aria-label="`Remove ${h.name || 'header'}`"
+                  @click="form.headers.splice(i, 1)"
+                />
+              </div>
+            </UFormField>
+            <UButton
+              v-if="form.headers.length < MAX_HEADERS"
+              icon="i-lucide-plus"
+              color="neutral"
+              variant="outline"
+              size="sm"
+              label="Add header"
+              @click="form.headers.push({ name: '', value: '' })"
+            />
+          </div>
+        </UFormField>
         <UAlert v-if="error" color="error" variant="subtle" icon="i-lucide-circle-alert" :description="error" role="alert" />
       </UForm>
     </template>
