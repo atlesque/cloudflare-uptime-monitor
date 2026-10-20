@@ -193,7 +193,7 @@ onMounted(async () => {
 
     <StatCards v-model:status="status" :monitors="monitors" :loading="!loaded" />
 
-    <UptimeBar :days="uptimeDays" :monitors="monitors" :loading="!loaded || !uptimeLoaded" />
+    <UptimeBar :days="uptimeDays" :monitors="monitors" :loading="!loaded || !uptimeLoaded" @detail="openDetail" />
 
     <MonitorsTable
       v-model:status="status"
