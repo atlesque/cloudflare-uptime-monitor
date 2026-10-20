@@ -9,7 +9,7 @@ export interface Diagnosis {
   /** The most useful of `references` (Akamai's first), or null when there is none. */
   reference: string | null;
   /** IDs to quote to the site owner's support team: Akamai's reference and Cloudflare's Ray ID. */
-  references: { label: string; value: string }[];
+  references: { label: string; value: string; meaning?: string }[];
   /** The observations behind the verdict, in plain words. */
   signals: string[];
 }
@@ -45,7 +45,10 @@ export function diagnose(status: number | null, headers: [string, string][] | nu
   if (envoyBody) envoy.push(`Body says "${envoyBody}" (Envoy proxy message)`);
 
   const references: Diagnosis["references"] = [];
-  if (akamaiRef) references.push({ label: "Akamai reference", value: akamaiRef });
+  if (akamaiRef) {
+    const meaning = AKAMAI_ERROR_TYPES[akamaiRef.split(".")[0]];
+    references.push({ label: "Akamai reference", value: akamaiRef, ...(meaning ? { meaning } : {}) });
+  }
   if (ray) references.push({ label: "Cloudflare Ray ID", value: ray });
   const result = (source: string | null, blocked: boolean, signals: string[]): Diagnosis => ({
     source,
@@ -93,6 +96,23 @@ export function diagnose(status: number | null, headers: [string, string][] | nu
   }
   return result(null, false, signals);
 }
+
+// The first part of an Akamai reference is the kind of error the edge server hit.
+const AKAMAI_ERROR_TYPES: Record<string, string> = {
+  "0": "WAF or Bot Manager block: the request was taken for an attack or a bot",
+  "1": "Read timeout: the origin did not answer in time (120 s by default)",
+  "3": "Read error: Akamai connected to the origin, but no response came back",
+  "4": "Write error: the connection closed before Akamai could send the whole request",
+  "6": "Connection failed: the origin, or a firewall in front of it, refused the connection",
+  "7": "Invalid request: the request was malformed or not RFC compliant",
+  "11": "DNS failure: Akamai could not resolve the origin's hostname",
+  "13": "Forwarding denied: part of SureRoute testing, usually harmless",
+  "15": "Zero-size object: the origin sent an empty response",
+  "18": "Access denied: a WAF rule (including DoS protection and geoblocking), or a certificate name mismatch",
+  "24": "Referrer denied: the Referer header was not allowed",
+  "27": "Client abort: the client closed the connection to Akamai",
+  "30": "Origin TLS handshake failed: the origin's certificate is invalid, expired, missing its chain, or for another name",
+};
 
 /**
  * Finds Akamai's error reference in a page, e.g. "Reference #18.5b6a1002.1792080000.3c4d5e6f".

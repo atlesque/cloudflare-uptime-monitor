@@ -2,6 +2,8 @@
 import type { Diagnosis, ProbeDiagnostics } from "~/types";
 
 const props = defineProps<{ diagnostics: ProbeDiagnostics; diagnosis: Diagnosis | null }>();
+const { me } = useMe();
+const toast = useToast();
 
 // Which text was just copied: "body" or a reference value.
 const copied = ref<string | null>(null);
@@ -18,8 +20,24 @@ const verdict = computed(() => {
   return { color: "info" as const, icon: "i-lucide-info", title: `Response from ${d.source}` };
 });
 
+type Reference = Diagnosis["references"][number];
+
 // Akamai's support team knows its references by their leading "#".
-const shown = (r: { label: string; value: string }) => (r.label.startsWith("Akamai") ? `#${r.value}` : r.value);
+const isAkamai = (r: Reference) => r.label.startsWith("Akamai");
+const shown = (r: Reference) => (isAkamai(r) ? `#${r.value}` : r.value);
+
+// The troubleshooter can't be prefilled from its URL, so the reference goes to the clipboard first.
+async function troubleshoot(r: Reference) {
+  const url = me.value?.akamaiTroubleshooterUrl;
+  if (!url) return;
+  window.open(url, "_blank", "noopener");
+  try {
+    await navigator.clipboard.writeText(shown(r));
+    toast.add({ title: "Reference copied", description: "Paste it into the troubleshooter's reference field.", icon: "i-lucide-clipboard-check" });
+  } catch {
+    // The page still opens; the reference stays selectable above.
+  }
+}
 </script>
 
 <template>
@@ -28,11 +46,22 @@ const shown = (r: { label: string; value: string }) => (r.label.startsWith("Akam
       <div
         v-for="item in diagnosis.references"
         :key="item.label"
-        class="flex items-center gap-3 rounded-md border border-default bg-elevated/50 px-3 py-2"
+        class="flex items-start gap-3 rounded-md border border-default bg-elevated/50 px-3 py-2"
       >
         <div class="min-w-0 flex-1">
           <div class="text-xs font-medium text-muted">{{ item.label }}</div>
           <div class="font-mono text-base font-semibold break-all text-highlighted select-all">{{ shown(item) }}</div>
+          <p v-if="item.meaning" class="mt-0.5 text-xs text-muted">{{ item.meaning }}</p>
+          <UButton
+            v-if="isAkamai(item) && me?.akamaiTroubleshooterUrl"
+            class="mt-2"
+            size="xs"
+            color="neutral"
+            variant="outline"
+            icon="i-lucide-external-link"
+            label="Look up in troubleshooter"
+            @click="troubleshoot(item)"
+          />
         </div>
         <UButton
           size="xs"

@@ -225,7 +225,11 @@ describe("failed-check diagnostics", () => {
     expect(m.failures[0]).toMatchObject({ source: "Akamai", blocked: true, reference: "0.103ad417.1792462692.15193b11" });
     const f = (await (await api(`/api/monitors/${id}/failures/${m.failures[0].id}`)).json()) as any;
     expect(f.diagnosis.references).toEqual([
-      { label: "Akamai reference", value: "0.103ad417.1792462692.15193b11" },
+      {
+        label: "Akamai reference",
+        value: "0.103ad417.1792462692.15193b11",
+        meaning: "WAF or Bot Manager block: the request was taken for an attack or a bot",
+      },
       { label: "Cloudflare Ray ID", value: "a4d487d33b81b626-WAW" },
     ]);
     expect(f.diagnosis.signals.join("\n")).toMatch(/passed through Cloudflare/);

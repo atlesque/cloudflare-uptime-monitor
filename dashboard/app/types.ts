@@ -60,7 +60,7 @@ export interface Diagnosis {
   source: string | null;
   blocked: boolean;
   reference: string | null;
-  references: { label: string; value: string }[];
+  references: { label: string; value: string; meaning?: string }[];
   signals: string[];
 }
 
@@ -105,6 +105,8 @@ export interface CheckResult {
 export interface Me {
   timeZone: string;
   notifications: { email: boolean; ntfy: boolean };
+  /** Settings > Monitors: a page to look up Akamai references, or null when not set. */
+  akamaiTroubleshooterUrl: string | null;
 }
 
 export interface BulkResult {
@@ -135,6 +137,7 @@ export interface Settings {
     secrets: { url: boolean; topic: boolean; token: boolean };
   };
   checks: { defaultIntervalMinutes: number; intervals: number[] };
+  diagnostics: { akamaiTroubleshooterUrl: string | null };
 }
 
 export interface Group {
