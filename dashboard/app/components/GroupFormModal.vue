@@ -11,9 +11,16 @@ const selected = ref<Set<number>>(new Set());
 const search = ref("");
 const error = ref<string | null>(null);
 const saving = ref(false);
+// Groups and monitors as they were when the form opened. After a save the parent's lists already hold
+// the result while the modal is still closing, which would flash "already exists", a merge warning or
+// a "will move here" note.
+const taken = ref<Set<string>>(new Set());
+const startGroups = ref<Map<number, string | null>>(new Map());
 
 watch(open, (isOpen) => {
   if (!isOpen) return;
+  taken.value = new Set(props.groups.map((g) => g.name));
+  startGroups.value = new Map(props.monitors.map((m) => [m.id, m.group]));
   name.value = props.group?.name ?? "";
   selected.value = new Set(props.group ? props.monitors.filter((m) => m.group === props.group!.name).map((m) => m.id) : []);
   search.value = "";
@@ -21,8 +28,8 @@ watch(open, (isOpen) => {
 });
 
 const trimmed = computed(() => name.value.trim());
-const merging = computed(() => !!props.group && trimmed.value !== props.group.name && props.groups.some((g) => g.name === trimmed.value));
-const exists = computed(() => !props.group && props.groups.some((g) => g.name === trimmed.value));
+const merging = computed(() => !!props.group && trimmed.value !== props.group.name && taken.value.has(trimmed.value));
+const exists = computed(() => !props.group && taken.value.has(trimmed.value));
 
 const sorted = computed(() => [...props.monitors].sort((a, b) => a.name.localeCompare(b.name)));
 const visible = computed(() => {
@@ -30,8 +37,14 @@ const visible = computed(() => {
   if (!q) return sorted.value;
   return sorted.value.filter((m) => `${m.name} ${m.url} ${m.group ?? ""}`.toLowerCase().includes(q));
 });
+/** A monitor's group when the form opened (a monitor added since then has its current one). */
+function groupOf(m: Monitor) {
+  return startGroups.value.has(m.id) ? startGroups.value.get(m.id)! : m.group;
+}
 /** Selected monitors that now sit in another group and will move. */
-const moving = computed(() => props.monitors.filter((m) => selected.value.has(m.id) && m.group && m.group !== props.group?.name));
+const moving = computed(() =>
+  props.monitors.filter((m) => selected.value.has(m.id) && groupOf(m) && groupOf(m) !== props.group?.name),
+);
 
 function toggle(id: number, on: boolean | "indeterminate") {
   const next = new Set(selected.value);
@@ -119,7 +132,7 @@ async function submit() {
                     <span class="block truncate text-sm font-medium text-highlighted">{{ m.name }}</span>
                     <span class="block truncate text-xs text-muted">{{ m.url }}</span>
                   </span>
-                  <UBadge v-if="m.group && m.group !== group?.name" color="neutral" variant="soft" size="sm" :label="m.group" />
+                  <UBadge v-if="groupOf(m) && groupOf(m) !== group?.name" color="neutral" variant="soft" size="sm" :label="groupOf(m)!" />
                 </label>
               </li>
               <li v-if="visible.length === 0" class="px-3 py-2 text-sm text-muted">No monitors match.</li>
@@ -127,7 +140,7 @@ async function submit() {
           </div>
         </UFormField>
         <p v-if="moving.length" class="text-sm text-muted">
-          {{ plural(moving.length, "monitor") }} will move here from {{ [...new Set(moving.map((m) => m.group))].join(", ") }}.
+          {{ plural(moving.length, "monitor") }} will move here from {{ [...new Set(moving.map(groupOf))].join(", ") }}.
         </p>
         <UAlert v-if="error" color="error" variant="subtle" icon="i-lucide-circle-alert" :description="error" role="alert" />
       </form>
