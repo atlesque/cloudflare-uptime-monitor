@@ -27,6 +27,8 @@ import {
 import { getTimeZone, setTimeZone } from "./time";
 import { getDailyUptime } from "./uptime";
 
+export { Prober } from "./prober";
+
 async function route(request: Request, env: Env, url: URL): Promise<Response> {
   const { method } = request;
   const path = url.pathname;

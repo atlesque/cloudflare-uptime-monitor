@@ -3,18 +3,15 @@
 
 import type { Budget } from "./budget";
 import type { MaintenanceMode, NotificationKind, NotificationPayload } from "./notifications";
-import { probe, type ProbeResult } from "./probe";
+import { parseStoredHeaders } from "./headers";
+import type { ProbeResult } from "./probe";
+import { runProbes } from "./prober";
 import { loadCheckSettings } from "./settings";
 import { applyCheck, type MonitorState, type Transition } from "./state";
 
 // The scheduler fires every minute but not at exact multiples of a minute, so a monitor
 // counts as due slightly early rather than skipping a whole extra run.
 const DUE_SLACK_MS = 30_000;
-
-// Workers allow 6 simultaneous outbound connections; further fetches queue
-// inside the runtime while their timeout is already running. Limiting here
-// keeps each probe's timeout measuring only its own request.
-const PROBE_CONCURRENCY = 6;
 
 /** Failed-check diagnostics kept per monitor (most recent first). */
 export const FAILURES_KEPT = 20;
@@ -30,6 +27,7 @@ interface CheckRow {
   consecutive_successes: number;
   maintenance_mode: MaintenanceMode;
   check_token: string | null;
+  request_headers: string | null;
   outage_started_at: number | null;
   last_checked_at: number | null;
   interval_minutes: number;
@@ -48,7 +46,7 @@ export async function runChecks(env: Env, budget: Budget, now: () => number = Da
   // Least recently checked first, so monitors deferred by the budget go first next time.
   const { results: rows } = await env.DB.prepare(
     `SELECT m.id, m.name, m.url, m.group_name, m.timeout_ms, m.state, m.consecutive_failures,
-            m.consecutive_successes, m.maintenance_mode, m.check_token, i.started_at AS outage_started_at,
+            m.consecutive_successes, m.maintenance_mode, m.check_token, m.request_headers, i.started_at AS outage_started_at,
             m.last_checked_at, COALESCE(m.check_interval_minutes, ?) AS interval_minutes, m.next_check_after
        FROM monitors m
        LEFT JOIN incidents i ON i.monitor_id = m.id AND i.ended_at IS NULL
@@ -64,7 +62,11 @@ export async function runChecks(env: Env, budget: Budget, now: () => number = Da
   );
   if (monitors.length === 0) return [];
 
-  const results = await mapWithConcurrency(monitors, PROBE_CONCURRENCY, (m) => probe(m.url, m.timeout_ms, budget));
+  const results = await runProbes(
+    env,
+    monitors.map((m) => ({ url: m.url, timeoutMs: m.timeout_ms, headers: parseStoredHeaders(m.request_headers) })),
+    budget,
+  );
   const checkedAt = now();
 
   const outcomes: CheckOutcome[] = [];
@@ -191,17 +193,4 @@ export function notificationInsert(
     `INSERT INTO notifications (monitor_id, kind, created_at, payload)
      SELECT id, ?, ?, ? FROM monitors WHERE id = ? AND maintenance_mode != 'silent' AND ${guard}`,
   ).bind(kind, payload.at, JSON.stringify(payload), payload.monitorId, ...guardParams);
-}
-
-async function mapWithConcurrency<T, R>(items: T[], limit: number, fn: (item: T) => Promise<R>): Promise<R[]> {
-  const out = new Array<R>(items.length);
-  let next = 0;
-  const worker = async () => {
-    while (next < items.length) {
-      const i = next++;
-      out[i] = await fn(items[i]);
-    }
-  };
-  await Promise.all(Array.from({ length: Math.min(limit, items.length) }, worker));
-  return out;
 }

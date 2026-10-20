@@ -148,6 +148,7 @@ Plain settings live under `vars` in `wrangler.jsonc`. Secrets are set with
 | `TIME_ZONE` | no | var | IANA time zone for the report and displayed times, default `UTC` |
 | `REPORT_HOUR` | no | var | Local hour (0–21) for the Monday report, default `8` |
 | `EXTERNAL_SUBREQUEST_LIMIT` | no | var | External requests per run, default `50` (Free plan). Raise on a paid plan |
+| `CHECK_LOCATION` | no | var | Region checks run from, as a Durable Object location hint such as `weur`. Empty: wherever Cloudflare runs the cron (see [Where checks run from](#where-checks-run-from)) |
 | `DEV_DISABLE_AUTH` | no | `.dev.vars` only | Skips Access for local development. Ignored when the Access settings are set |
 
 ## Updating
@@ -161,6 +162,11 @@ pnpm run deploy
 
 Your `wrangler.jsonc` and `.dev.vars` aren't tracked, so pulling never overwrites them. If a new
 release adds a setting, compare your file with `wrangler.example.jsonc`.
+
+Upgrading from a version without `CHECK_LOCATION`: copy the `durable_objects` and `migrations`
+blocks and the `CHECK_LOCATION` var from `wrangler.example.jsonc` into your `wrangler.jsonc`
+(and into the `WRANGLER_CONFIG` build secret if you deploy with Workers Builds). Until then,
+checks keep running from the Worker as before.
 
 Upgrading from a version that had `NTFY_URL` and `NTFY_TOPIC` under `vars`: delete both from your
 `wrangler.jsonc`, deploy, then set them with `wrangler secret put` as in step 7. Wrangler refuses a
@@ -211,6 +217,10 @@ an authentication error, create an API token from the *Edit Cloudflare Workers* 
   and the first 16 KB of the body are kept (the last 20 per monitor, for up to 31 days), and
   shown in the detail panel and in *Check now*. The dashboard points out Akamai and Cloudflare
   block pages (with their reference ID) and errors that came from the site's own origin.
+- **Request headers per monitor.** Optional extra headers sent with each check, for example a
+  secret header that a site's firewall is told to let through, or a different `User-Agent`. They only go to the monitor URL's
+  own host, and not over plain HTTP when the URL is HTTPS, so a redirect to another site never
+  sees them.
 - **Retry-After.** When a site answers `429` or `503` with `Retry-After`, it isn't checked again
   until then (at most 30 minutes later).
 - **State machine.** `Pending` → `Up` on the first success. Two consecutive failures → `Down`.
@@ -240,6 +250,20 @@ an authentication error, create an API token from the *Edit Cloudflare Workers* 
 Checks run from Cloudflare's network only, a single vantage point. A result does not prove a
 site is reachable from every region or network. Nothing independently monitors the monitor.
 
+### Where checks run from
+
+Cloudflare runs scheduled Workers on whichever machine has spare capacity, anywhere in the world,
+and Smart Placement doesn't apply to them. Without `CHECK_LOCATION`, a site sees checks from
+Cloudflare IPs in Singapore, the US, Japan and elsewhere, and a WAF can block some of those on IP
+reputation or location. With `CHECK_LOCATION` set (for example `weur` for Western Europe), the
+checks run in a Durable Object created with that location hint, so they leave from that region.
+The hint is best effort, and the IPs are still shared Cloudflare addresses, so a strict WAF may
+still need an exception, for example on a secret request header. If the Durable Object can't be
+reached, that run's checks fall back to the Worker rather than being skipped.
+
+One call a minute to the Durable Object is about 1,440 requests a day, far within the Free plan's
+100,000 a day.
+
 ## Layout
 
 | Path | Purpose |
@@ -257,6 +281,7 @@ site is reachable from every region or network. Nothing independently monitors t
 | `src/settings.ts`, `src/groups.ts` | Settings saved from the dashboard (ntfy, check interval) and group management |
 | `src/auth.ts` | Cloudflare Access JWT verification |
 | `src/url.ts`, `src/budget.ts` | Public-URL validation, Free-plan subrequest budget |
+| `src/prober.ts`, `src/headers.ts` | Running checks from `CHECK_LOCATION`, per-monitor request headers |
 | `dashboard/` | Dashboard: a client-only [Nuxt 4](https://nuxt.com) + [Nuxt UI](https://ui.nuxt.com) app, built into `public/` |
 | `migrations/` | D1 schema |
 
@@ -292,10 +317,10 @@ All routes require a valid Cloudflare Access assertion.
 | Method | Path | Notes |
 | --- | --- | --- |
 | `GET` | `/api/monitors` | All monitors with 30-day metrics |
-| `POST` | `/api/monitors` | `{ name, url, group?, timeoutMs?, checkIntervalMinutes? }` |
+| `POST` | `/api/monitors` | `{ name, url, group?, timeoutMs?, checkIntervalMinutes?, requestHeaders? }`; `requestHeaders` is up to 10 `{ name, value }` |
 | `GET` | `/api/monitors/:id` | Includes the 30-day incident list and recent failed checks |
 | `GET` | `/api/monitors/:id/failures/:failureId` | One failed check with its headers, body and diagnosis |
-| `PATCH` | `/api/monitors/:id` | `{ name?, group?, timeoutMs?, checkIntervalMinutes?, url?, confirmUrlChange? }` |
+| `PATCH` | `/api/monitors/:id` | `{ name?, group?, timeoutMs?, checkIntervalMinutes?, requestHeaders?, url?, confirmUrlChange? }` |
 | `DELETE` | `/api/monitors/:id?confirm=true` | Permanent; removes incident history |
 | `POST` | `/api/monitors/:id/check` | Diagnostics only (includes the response when it fails); records nothing |
 | `PUT` | `/api/monitors/:id/maintenance` | `{ mode: "notify" \| "silent" \| "none" }` |

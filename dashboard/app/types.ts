@@ -20,6 +20,11 @@ export interface LastCheck {
   durationMs: number | null;
 }
 
+export interface RequestHeader {
+  name: string;
+  value: string;
+}
+
 export interface Monitor {
   id: number;
   name: string;
@@ -28,6 +33,8 @@ export interface Monitor {
   timeoutMs: number;
   /** null follows the default interval from the settings. */
   checkIntervalMinutes: number | null;
+  /** Extra headers sent with each check, only to the monitor URL's host. */
+  requestHeaders: RequestHeader[];
   createdAt: number;
   observedSince: number;
   state: MonitorState;

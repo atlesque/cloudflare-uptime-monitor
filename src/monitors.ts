@@ -5,7 +5,8 @@ import { setMaintenance } from "./maintenance";
 import { diagnose } from "./diagnosis";
 import { computeMetrics, maintenanceOverlap, type IncidentSpan, type MaintenanceSpan } from "./metrics";
 import type { MaintenanceMode } from "./notifications";
-import { probe } from "./probe";
+import { parseRequestHeaders, parseStoredHeaders, toApiHeaders } from "./headers";
+import { runProbes } from "./prober";
 import { parseInterval } from "./settings";
 import { DAY } from "./time";
 import { normalizeMonitorUrl } from "./url";
@@ -34,6 +35,7 @@ interface MonitorRow {
   outage_started_at: number | null;
   maintenance_started_at: number | null;
   next_check_after: number | null;
+  request_headers: string | null;
 }
 
 interface FailureRow {
@@ -67,7 +69,7 @@ interface MaintenanceRow {
 const SELECT_MONITORS = `
   SELECT m.id, m.name, m.url, m.group_name, m.timeout_ms, m.check_interval_minutes, m.created_at, m.observed_since, m.state,
          m.last_checked_at, m.last_status, m.last_error, m.last_duration_ms, m.maintenance_mode,
-         m.next_check_after, i.started_at AS outage_started_at, p.started_at AS maintenance_started_at
+         m.next_check_after, m.request_headers, i.started_at AS outage_started_at, p.started_at AS maintenance_started_at
     FROM monitors m
     LEFT JOIN incidents i ON i.monitor_id = m.id AND i.ended_at IS NULL
     LEFT JOIN maintenance_periods p ON p.monitor_id = m.id AND p.ended_at IS NULL`;
@@ -117,6 +119,8 @@ function toApi(row: MonitorRow, history: { incidents: IncidentRow[]; maintenance
     timeoutMs: row.timeout_ms,
     /** null follows the default interval from the settings. */
     checkIntervalMinutes: row.check_interval_minutes,
+    /** Extra headers sent with each check, only to the monitor URL's host. */
+    requestHeaders: toApiHeaders(row.request_headers),
     createdAt: row.created_at,
     observedSince: row.observed_since,
     state: row.state,
@@ -266,12 +270,14 @@ export async function createMonitor(env: Env, request: Request, now = Date.now()
   const group = parseGroup(body.group);
   const timeoutMs = parseTimeout(body.timeoutMs);
   const interval = parseMonitorInterval(body.checkIntervalMinutes);
+  const headers = parseRequestHeaders(body.requestHeaders);
   try {
     const row = await env.DB.prepare(
-      `INSERT INTO monitors (name, url, group_name, timeout_ms, check_interval_minutes, created_at, observed_since)
-       VALUES (?, ?, ?, ?, ?, ?, ?) RETURNING id`,
+      `INSERT INTO monitors
+         (name, url, group_name, timeout_ms, check_interval_minutes, request_headers, created_at, observed_since)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?) RETURNING id`,
     )
-      .bind(name, url, group, timeoutMs, interval, now, now)
+      .bind(name, url, group, timeoutMs, interval, headers, now, now)
       .first<{ id: number }>();
     return getMonitor(env, row!.id, now);
   } catch (err) {
@@ -281,7 +287,7 @@ export async function createMonitor(env: Env, request: Request, now = Date.now()
 }
 
 /**
- * Edits name, group and timeout without touching history. A URL change must be
+ * Edits name, group, timeout, interval and request headers without touching history. A URL change must be
  * confirmed and starts a new observation period: state, incidents and
  * maintenance history are reset so old data is never attributed to the new URL.
  */
@@ -298,6 +304,7 @@ export async function updateMonitor(env: Env, id: number, request: Request, now 
   if ("checkIntervalMinutes" in body) {
     sets.push("check_interval_minutes = ?"), params.push(parseMonitorInterval(body.checkIntervalMinutes));
   }
+  if ("requestHeaders" in body) sets.push("request_headers = ?"), params.push(parseRequestHeaders(body.requestHeaders));
 
   const statements: D1PreparedStatement[] = [];
   const newUrl = "url" in body ? parseUrl(body.url) : current.url;
@@ -345,12 +352,14 @@ export async function updateMonitor(env: Env, id: number, request: Request, now 
 
 /** Diagnostics-only probe: reports the result without recording anything. */
 export async function checkNow(env: Env, id: number) {
-  const m = await env.DB.prepare(`SELECT url, timeout_ms FROM monitors WHERE id = ?`)
+  const m = await env.DB.prepare(`SELECT url, timeout_ms, request_headers FROM monitors WHERE id = ?`)
     .bind(id)
-    .first<{ url: string; timeout_ms: number }>();
+    .first<{ url: string; timeout_ms: number; request_headers: string | null }>();
   if (!m) throw new HttpError(404, "Monitor not found");
   const checkedAt = Date.now();
-  const result = await probe(m.url, m.timeout_ms);
+  const [result] = await runProbes(env, [
+    { url: m.url, timeoutMs: m.timeout_ms, headers: parseStoredHeaders(m.request_headers) },
+  ]);
   const d = result.diagnostics;
   return { checkedAt, ...result, diagnosis: d ? diagnose(result.status, d.headers, d.body) : null };
 }
