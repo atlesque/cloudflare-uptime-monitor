@@ -247,6 +247,7 @@ describe("dashboard", () => {
       timeZone: "Europe/Brussels",
       notifications: { email: true, ntfy: false },
       akamaiTroubleshooterUrl: null,
+      checkLocations: { available: true, default: "weur" },
     });
   });
 });

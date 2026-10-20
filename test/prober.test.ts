@@ -2,7 +2,7 @@ import { env } from "cloudflare:workers";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { Budget } from "../src/budget";
 import { runChecks } from "../src/checks";
-import { Prober, proberStub } from "../src/prober";
+import { defaultLocation, Prober } from "../src/prober";
 import { addMonitor, advance, api, fakeSites, getMonitor, json, MINUTE, resetDb, useClock } from "./helpers";
 
 const SITE = "https://site.example/";
@@ -61,13 +61,62 @@ describe("check location", () => {
     expect((await getMonitor(id)).state).toBe("up");
   });
 
-  it("accepts location hints and ignores unknown locations", () => {
+  it("uses CHECK_LOCATION only when it is a location hint", () => {
     vi.spyOn(console, "warn").mockImplementation(() => {});
-    expect(proberStub({ ...env, CHECK_LOCATION: "weur" })).not.toBeNull();
-    expect(proberStub({ ...env, CHECK_LOCATION: " WEUR " })).not.toBeNull();
-    expect(proberStub({ ...env, CHECK_LOCATION: "eu" })).toBeNull();
-    expect(proberStub({ ...env, CHECK_LOCATION: "mars" })).toBeNull();
-    expect(proberStub({ ...env, CHECK_LOCATION: "" })).toBeNull();
+    expect(defaultLocation({ ...env, CHECK_LOCATION: "weur" })).toBe("weur");
+    expect(defaultLocation({ ...env, CHECK_LOCATION: " WEUR " })).toBe("weur");
+    expect(defaultLocation({ ...env, CHECK_LOCATION: "eu" })).toBeNull();
+    expect(defaultLocation({ ...env, CHECK_LOCATION: "" })).toBeNull();
+  });
+});
+
+describe("check location per monitor", () => {
+  const objectName = (location: string) => env.PROBER.idFromName(`checks-${location}`).toString();
+  const calledObjects = (spy: { mock: { contexts: unknown[] } }) =>
+    spy.mock.contexts.map((c) => (c as { ctx: DurableObjectState }).ctx.id.toString());
+
+  it("checks each monitor from its own location, with one Prober call per location", async () => {
+    const a = await newMonitor();
+    const { body: b } = await addMonitor({ name: "B", url: "https://b.example/", checkLocation: "enam" });
+    const { body: c } = await addMonitor({ name: "C", url: "https://c.example/", checkLocation: "enam" });
+    expect(b.checkLocation).toBe("enam");
+    expect((await getMonitor(a)).checkLocation).toBeNull();
+    fakeSites({ [SITE]: 200, "https://b.example/": 200, "https://c.example/": 503 });
+    const probeAll = vi.spyOn(Prober.prototype, "probeAll");
+    const budget = new Budget(10);
+
+    await runChecks(env, budget);
+
+    expect(calledObjects(probeAll).sort()).toEqual([objectName("enam"), objectName("weur")].sort());
+    expect(budget.remaining).toBe(7);
+    expect((await getMonitor(a)).lastCheck.status).toBe(200);
+    expect((await getMonitor(b.id)).lastCheck.status).toBe(200);
+    expect((await getMonitor(c.id)).lastCheck.status).toBe(503);
+  });
+
+  it("uses the monitor's location for Check now", async () => {
+    const { body } = await addMonitor({ name: "B", url: "https://b.example/", checkLocation: "apac" });
+    fakeSites({ "https://b.example/": 200 });
+    const probeAll = vi.spyOn(Prober.prototype, "probeAll");
+
+    await api(`/api/monitors/${body.id}/check`, { method: "POST" });
+
+    expect(calledObjects(probeAll)).toEqual([objectName("apac")]);
+  });
+
+  it("can be changed back to the default and rejects unknown locations", async () => {
+    const id = await newMonitor({ checkLocation: "eeur" });
+    const res = await api(`/api/monitors/${id}`, json("PATCH", { checkLocation: null }));
+    expect(((await res.json()) as any).checkLocation).toBeNull();
+
+    const bad = await addMonitor({ name: "X", url: "https://x.example/", checkLocation: "mars" });
+    expect(bad.status).toBe(400);
+    expect(bad.body.error).toContain("checkLocation");
+  });
+
+  it("reports the default location to the dashboard", async () => {
+    const me = (await (await api("/api/me")).json()) as any;
+    expect(me.checkLocations).toEqual({ available: true, default: "weur" });
   });
 });
 
