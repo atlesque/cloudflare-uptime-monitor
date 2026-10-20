@@ -15,6 +15,7 @@ const form = reactive({
   timeout: 10,
   interval: "default",
   headers: [] as RequestHeader[],
+  cacheBust: false,
   confirmUrlChange: false,
 });
 const error = ref<string | null>(null);
@@ -34,6 +35,7 @@ watch(open, (isOpen) => {
     timeout: (m?.timeoutMs ?? 10_000) / 1000,
     interval: m?.checkIntervalMinutes == null ? "default" : String(m.checkIntervalMinutes),
     headers: (m?.requestHeaders ?? []).map((h) => ({ ...h })),
+    cacheBust: m?.cacheBust ?? false,
     confirmUrlChange: false,
   });
   error.value = null;
@@ -75,6 +77,7 @@ async function submit() {
     timeoutMs: Math.round(form.timeout * 1000),
     checkIntervalMinutes: form.interval === "default" ? null : Number(form.interval),
     requestHeaders: form.headers,
+    cacheBust: form.cacheBust,
   };
   saving.value = true;
   error.value = null;
@@ -117,6 +120,13 @@ async function submit() {
             <UCheckbox v-model="form.confirmUrlChange" label="I understand the history will be reset" />
           </UFormField>
         </template>
+        <UFormField name="cacheBust">
+          <UCheckbox
+            v-model="form.cacheBust"
+            label="Bypass caches"
+            description="Adds a unique ?_uptime= parameter to the URL on each check, so a CDN such as Akamai can't answer with a cached copy while the site is down."
+          />
+        </UFormField>
         <UFormField label="Check interval" name="interval" description="A monitor goes down after two failed checks in a row.">
           <USelect v-model="form.interval" :items="intervalItems" class="w-full" />
         </UFormField>

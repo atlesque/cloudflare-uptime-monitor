@@ -35,6 +35,8 @@ export interface Monitor {
   checkIntervalMinutes: number | null;
   /** Extra headers sent with each check, only to the monitor URL's host. */
   requestHeaders: RequestHeader[];
+  /** Each check adds a unique `_uptime` query parameter so a CDN can't answer from cache. */
+  cacheBust: boolean;
   createdAt: number;
   observedSince: number;
   state: MonitorState;

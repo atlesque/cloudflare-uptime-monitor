@@ -2,6 +2,7 @@ import { env } from "cloudflare:workers";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { Budget } from "../src/budget";
 import { runChecks } from "../src/checks";
+import { withCacheBust } from "../src/probe";
 import { Prober, proberStub } from "../src/prober";
 import { addMonitor, advance, api, fakeSites, getMonitor, json, MINUTE, resetDb, useClock } from "./helpers";
 
@@ -84,6 +85,7 @@ describe("request headers", () => {
     });
 
     await runChecks(env, new Budget(10));
+    advance(1000);
     await api(`/api/monitors/${id}/check`, { method: "POST" });
 
     expect(seen).toEqual(["s3cret", "s3cret"]);
@@ -165,4 +167,52 @@ it("checks again after a minute with the same headers", async () => {
   advance(MINUTE);
   await runChecks(env, new Budget(10));
   expect(fetch).toHaveBeenCalledTimes(2);
+});
+
+describe("cache busting", () => {
+  const PAGE = "https://site.example/api/config?lang=nl&x=a%20b";
+
+  it("is off by default", async () => {
+    const id = await newMonitor();
+    expect((await getMonitor(id)).cacheBust).toBe(false);
+    fakeSites({ [SITE]: 200 });
+    await runChecks(env, new Budget(10));
+    expect((await getMonitor(id)).state).toBe("up");
+  });
+
+  it("adds a unique _uptime parameter to each check, keeping the existing query", async () => {
+    const id = await newMonitor({ url: PAGE, cacheBust: true });
+    expect((await getMonitor(id)).cacheBust).toBe(true);
+    const seen: string[] = [];
+    vi.spyOn(globalThis, "fetch").mockImplementation(async (input, init) => {
+      seen.push(new Request(input as RequestInfo, init).url);
+      return new Response("ok");
+    });
+
+    await runChecks(env, new Budget(10));
+    advance(MINUTE);
+    await runChecks(env, new Budget(10));
+    advance(1000);
+    await api(`/api/monitors/${id}/check`, { method: "POST" });
+
+    expect(seen).toHaveLength(3);
+    for (const url of seen) expect(url).toMatch(/^https:\/\/site\.example\/api\/config\?lang=nl&x=a%20b&_uptime=\d+$/);
+    expect(new Set(seen).size).toBe(3);
+    expect((await getMonitor(id)).url).toBe(PAGE);
+  });
+
+  it("starts a query string when the URL has none", () => {
+    expect(withCacheBust("https://site.example/", 123)).toBe("https://site.example/?_uptime=123");
+    expect(withCacheBust("https://site.example/a?", 123)).toBe("https://site.example/a?_uptime=123");
+    expect(withCacheBust("https://site.example/a?b=1#top", 123)).toBe("https://site.example/a?b=1&_uptime=123#top");
+  });
+
+  it("can be turned off and rejects non-booleans", async () => {
+    const id = await newMonitor({ cacheBust: true });
+    let res = await api(`/api/monitors/${id}`, json("PATCH", { cacheBust: false }));
+    expect(res.status).toBe(200);
+    expect(((await res.json()) as any).cacheBust).toBe(false);
+    res = await api(`/api/monitors/${id}`, json("PATCH", { cacheBust: "yes" }));
+    expect(res.status).toBe(400);
+  });
 });

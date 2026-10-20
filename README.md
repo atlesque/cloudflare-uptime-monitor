@@ -221,6 +221,10 @@ an authentication error, create an API token from the *Edit Cloudflare Workers* 
   secret header that a site's firewall is told to let through, or a different `User-Agent`. They only go to the monitor URL's
   own host, and not over plain HTTP when the URL is HTTPS, so a redirect to another site never
   sees them.
+- **Cache busting per monitor.** Optional. Each check adds a unique `_uptime=<timestamp>`
+  query parameter to the URL (after any query it already has), so a CDN can't answer with a
+  cached copy. Akamai, for example, can keep serving the last `200` while the origin is down.
+  Enter the URL without the parameter and tick *Bypass caches*.
 - **Retry-After.** When a site answers `429` or `503` with `Retry-After`, it isn't checked again
   until then (at most 30 minutes later).
 - **State machine.** `Pending` → `Up` on the first success. Two consecutive failures → `Down`.
@@ -317,10 +321,10 @@ All routes require a valid Cloudflare Access assertion.
 | Method | Path | Notes |
 | --- | --- | --- |
 | `GET` | `/api/monitors` | All monitors with 30-day metrics |
-| `POST` | `/api/monitors` | `{ name, url, group?, timeoutMs?, checkIntervalMinutes?, requestHeaders? }`; `requestHeaders` is up to 10 `{ name, value }` |
+| `POST` | `/api/monitors` | `{ name, url, group?, timeoutMs?, checkIntervalMinutes?, requestHeaders?, cacheBust? }`; `requestHeaders` is up to 10 `{ name, value }`, `cacheBust` a boolean |
 | `GET` | `/api/monitors/:id` | Includes the 30-day incident list and recent failed checks |
 | `GET` | `/api/monitors/:id/failures/:failureId` | One failed check with its headers, body and diagnosis |
-| `PATCH` | `/api/monitors/:id` | `{ name?, group?, timeoutMs?, checkIntervalMinutes?, requestHeaders?, url?, confirmUrlChange? }` |
+| `PATCH` | `/api/monitors/:id` | `{ name?, group?, timeoutMs?, checkIntervalMinutes?, requestHeaders?, cacheBust?, url?, confirmUrlChange? }` |
 | `DELETE` | `/api/monitors/:id?confirm=true` | Permanent; removes incident history |
 | `POST` | `/api/monitors/:id/check` | Diagnostics only (includes the response when it fails); records nothing |
 | `PUT` | `/api/monitors/:id/maintenance` | `{ mode: "notify" \| "silent" \| "none" }` |
