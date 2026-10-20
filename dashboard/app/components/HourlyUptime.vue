@@ -34,8 +34,19 @@ function joinClass(i: number) {
   return both.includes("major") ? "bg-error" : "bg-warning";
 }
 
-const hourUptime = (hour: HourUptime) =>
+const hourUptime = (hour: Pick<HourUptime, "observedMs" | "downtimeMs">) =>
   hour.observedMs > 0 ? (100 * (hour.observedMs - hour.downtimeMs)) / hour.observedMs : null;
+
+/** Runs of hours joined by one outage: each run is read (hovered, tapped, stepped through) as one. */
+const groups = computed(() => {
+  const runs: { from: number; to: number }[] = [];
+  props.hours.forEach((_, i) => {
+    if (i > 0 && joinsNext(i - 1)) runs.at(-1)!.to = i;
+    else runs.push({ from: i, to: i });
+  });
+  return runs;
+});
+const groupOf = computed(() => groups.value.flatMap((g, gi) => Array.from({ length: g.to - g.from + 1 }, () => gi)));
 
 const totals = computed(() => {
   const observed = props.hours.reduce((sum, h) => sum + h.observedMs, 0);
@@ -54,22 +65,41 @@ function axisLabel(hour: HourUptime, i: number) {
 
 const incidentById = computed(() => new Map(props.incidents.map((i) => [i.id, i])));
 
-// ---- hour details: on hover, tap, or arrow keys ----
+// ---- hour or outage details: on hover, tap, or arrow keys ----
 
+/** Index into `groups` of the run being read. */
 const active = ref<number | null>(null);
-const activeHour = computed(() => (active.value == null ? null : (props.hours[active.value] ?? null)));
+const activeGroup = computed(() => (active.value == null ? null : (groups.value[active.value] ?? null)));
+const isActive = (i: number) => active.value != null && groupOf.value[i] === active.value;
+/** The active run's hours added together, spanning its first hour's start to its last hour's end. */
+const activeHour = computed(() => {
+  const group = activeGroup.value;
+  if (!group) return null;
+  const run = props.hours.slice(group.from, group.to + 1);
+  const sum = (key: "observedMs" | "downtimeMs" | "maintenanceMs") => run.reduce((total, h) => total + h[key], 0);
+  return {
+    start: run[0]!.start,
+    end: run.at(-1)!.end,
+    hourCount: run.length,
+    observedMs: sum("observedMs"),
+    downtimeMs: sum("downtimeMs"),
+    maintenanceMs: sum("maintenanceMs"),
+    incidentIds: [...new Set(run.flatMap((h) => h.incidentIds))],
+  };
+});
 const activeIncidents = computed(() =>
   (activeHour.value?.incidentIds ?? []).map((id) => incidentById.value.get(id)).filter((i) => i != null),
 );
 watch(activeHour, (hour) => (highlighted.value = hour?.incidentIds ?? []));
 const panelSide = computed(() => {
-  if (active.value == null) return "";
-  const at = active.value / Math.max(1, props.hours.length - 1);
+  const group = activeGroup.value;
+  if (!group) return "";
+  const at = (group.from + group.to) / 2 / Math.max(1, props.hours.length - 1);
   return at < 0.33 ? "left-0" : at > 0.67 ? "right-0" : "left-1/2 -translate-x-1/2";
 });
 
 function onKey(event: KeyboardEvent) {
-  const last = props.hours.length - 1;
+  const last = groups.value.length - 1;
   const step: Record<string, number> = { ArrowLeft: -1, ArrowRight: 1, Home: -Infinity, End: Infinity };
   if (!(event.key in step) || last < 0) return;
   event.preventDefault();
@@ -95,7 +125,7 @@ function onKey(event: KeyboardEvent) {
           class="grid grid-cols-24 rounded py-1 outline-offset-4 focus-visible:outline-2 focus-visible:outline-primary"
           tabindex="0"
           role="group"
-          aria-label="Uptime per hour for the last 24 hours. Use the arrow keys to read each hour."
+          aria-label="Uptime per hour for the last 24 hours. Use the arrow keys to read each hour or outage."
           @keydown="onKey"
           @blur="active = null"
         >
@@ -106,16 +136,20 @@ function onKey(event: KeyboardEvent) {
             tabindex="-1"
             class="relative flex h-2.5 min-w-0 justify-center sm:h-3.5"
             :aria-label="`${formatDay(hour.start)}, ${formatClock(hour.start)}`"
-            @mouseenter="active = i"
-            @focus="active = i"
-            @click="active = i"
+            @mouseenter="active = groupOf[i]!"
+            @focus="active = groupOf[i]!"
+            @click="active = groupOf[i]!"
           >
-            <span v-if="joinsNext(i)" class="absolute inset-y-0 left-1/2 -right-1/2" :class="joinClass(i)" />
+            <span
+              v-if="joinsNext(i)"
+              class="absolute inset-y-0 left-1/2 -right-1/2 transition"
+              :class="[joinClass(i), isActive(i) && 'scale-y-125']"
+            />
             <span
               class="relative size-2.5 rounded-full transition sm:size-3.5"
               :class="[
-                DOT_CLASSES[level(hour)][active === i ? 1 : 0],
-                active === i && 'scale-125',
+                DOT_CLASSES[level(hour)][isActive(i) ? 1 : 0],
+                isActive(i) && 'scale-125',
                 i === hours.length - 1 && 'ring-2 ring-offset-2 ring-(--ui-border-accented) ring-offset-(--ui-bg)',
               ]"
             />
@@ -135,7 +169,7 @@ function onKey(event: KeyboardEvent) {
           <div class="flex items-baseline justify-between gap-2">
             <span class="font-medium text-highlighted">
               {{ formatWeekday(activeHour.start) }} {{ formatClock(activeHour.start) }}–{{
-                activeHour.end < activeHour.start + 3_600_000 ? "now" : formatClock(activeHour.end)
+                activeHour.end < activeHour.start + activeHour.hourCount * 3_600_000 ? "now" : formatClock(activeHour.end)
               }}
             </span>
             <span class="tabular-nums" :class="uptimeColor(hourUptime(activeHour))">{{ formatUptime(hourUptime(activeHour)) }}</span>
@@ -145,7 +179,7 @@ function onKey(event: KeyboardEvent) {
             No downtime<template v-if="activeHour.maintenanceMs">, {{ formatDuration(activeHour.maintenanceMs) }} in silent maintenance</template>
           </p>
           <template v-else>
-            <p class="mt-1 text-muted">{{ formatDowntime(activeHour.downtimeMs) }} down in this hour</p>
+            <p class="mt-1 text-muted">{{ formatDowntime(activeHour.downtimeMs) }} down in {{ activeHour.hourCount > 1 ? `these ${activeHour.hourCount} hours` : "this hour" }}</p>
             <ul class="mt-2 space-y-1.5">
               <li v-for="incident in activeIncidents" :key="incident.id">
                 <div v-if="incident.failureReason" class="truncate font-mono text-xs text-error">{{ incident.failureReason }}</div>
