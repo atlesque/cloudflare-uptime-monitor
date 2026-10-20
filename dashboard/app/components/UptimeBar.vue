@@ -2,6 +2,7 @@
 import type { DayUptime, Monitor } from "~/types";
 
 const props = defineProps<{ days: DayUptime[] | null; monitors: Monitor[]; loading?: boolean }>();
+const emit = defineEmits<{ detail: [monitor: Pick<Monitor, "id">] }>();
 
 /** A day is "major" when one monitor was down for at least this long. */
 const MAJOR_MS = 60 * 60_000;
@@ -65,6 +66,24 @@ const panelSide = computed(() => {
   return at < 0.33 ? "left-0" : at > 0.67 ? "right-0" : "left-1/2 -translate-x-1/2";
 });
 
+// Deleted monitors can still show up in past days, but have no detail panel to open.
+const known = computed(() => new Set(props.monitors.map((m) => m.id)));
+
+const wrapper = useTemplateRef("wrapper");
+// A tap can count as leaving straight away, so touch closes the panel by tapping elsewhere (focusout) instead.
+function onPointerLeave(event: PointerEvent) {
+  if (event.pointerType !== "touch") active.value = null;
+}
+// Close when focus leaves the bar and its panel, not when it moves into the panel to select text.
+function onFocusOut(event: FocusEvent) {
+  if (!wrapper.value?.contains(event.relatedTarget as Node | null)) active.value = null;
+}
+
+function openMonitor(id: number) {
+  active.value = null;
+  emit("detail", { id });
+}
+
 function onKey(event: KeyboardEvent) {
   const last = shown.value.length - 1;
   const step: Record<string, number> = { ArrowLeft: -1, ArrowRight: 1, Home: -Infinity, End: Infinity };
@@ -95,14 +114,13 @@ function onKey(event: KeyboardEvent) {
     </div>
 
     <template v-else>
-      <div class="relative mt-3" @mouseleave="active = null">
+      <div ref="wrapper" class="relative mt-3" @pointerleave="onPointerLeave" @focusout="onFocusOut">
         <div
           class="flex h-9 gap-px rounded outline-offset-4 focus-visible:outline-2 focus-visible:outline-primary sm:gap-0.5"
           tabindex="0"
           role="group"
           :aria-label="`Daily uptime for the last ${shown.length} days. Use the arrow keys to read each day.`"
           @keydown="onKey"
-          @blur="active = null"
         >
           <button
             v-for="(day, i) in shown"
@@ -118,15 +136,12 @@ function onKey(event: KeyboardEvent) {
           />
         </div>
 
-        <div
-          v-if="activeDay"
-          class="pointer-events-none absolute top-full z-10 mt-2 w-64 rounded-md border border-default bg-default p-3 text-sm shadow-lg"
-          :class="panelSide"
-          aria-live="polite"
-        >
-          <div class="flex items-baseline justify-between gap-2">
-            <span class="font-medium text-highlighted">{{ formatDay(activeDay.start) }}</span>
-            <span class="tabular-nums" :class="uptimeColor(dayUptime(activeDay))">{{ formatUptime(dayUptime(activeDay)) }}</span>
+        <!-- The top padding bridges the gap to the bar, so the pointer can move into the panel without closing it. -->
+        <div v-if="activeDay" class="absolute top-full z-10 w-64 pt-2 outline-none" :class="panelSide" tabindex="-1">
+          <div class="rounded-md border border-default bg-default p-3 text-sm shadow-lg" aria-live="polite">
+            <div class="flex items-baseline justify-between gap-2">
+              <span class="font-medium text-highlighted">{{ formatDay(activeDay.start) }}</span>
+              <span class="tabular-nums" :class="uptimeColor(dayUptime(activeDay))">{{ formatUptime(dayUptime(activeDay)) }}</span>
           </div>
           <p v-if="activeDay.observedMs === 0" class="mt-1 text-muted">No data</p>
           <p v-else-if="activeDay.downtimeMs === 0" class="mt-1 text-muted">No downtime recorded</p>
@@ -136,7 +151,15 @@ function onKey(event: KeyboardEvent) {
             </p>
             <ul class="mt-2 space-y-1">
               <li v-for="m in activeDay.down.slice(0, MAX_LISTED)" :key="m.id" class="flex justify-between gap-3">
-                <span class="truncate">{{ m.name }}</span>
+                <button
+                  v-if="known.has(m.id)"
+                  type="button"
+                  class="cursor-pointer truncate text-left hover:text-primary hover:underline focus-visible:text-primary focus-visible:underline focus-visible:outline-none"
+                  @click="openMonitor(m.id)"
+                >
+                  {{ m.name }}
+                </button>
+                <span v-else class="truncate">{{ m.name }}</span>
                 <span class="shrink-0 tabular-nums text-muted">{{ formatDowntime(m.downtimeMs) }}</span>
               </li>
               <li v-if="activeDay.down.length > MAX_LISTED" class="text-muted">
@@ -144,6 +167,7 @@ function onKey(event: KeyboardEvent) {
               </li>
             </ul>
           </template>
+          </div>
         </div>
       </div>
 
