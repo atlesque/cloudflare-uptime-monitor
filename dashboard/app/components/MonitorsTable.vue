@@ -39,15 +39,89 @@ watch(
   },
 );
 
+// Sorting by a column header: ascending, descending, then back to the API's order.
+// Monitors without a value (never checked, no group, no outage) stay last either way,
+// and ties fall back to the name. The choice is remembered in this browser.
+type SortKey = "name" | "group" | "state" | "uptime" | "downtime" | "lastCheck" | "response" | "outage";
+type Sort = { key: SortKey; desc: boolean } | null;
+const STATE_ORDER: Record<Monitor["state"], number> = { down: 0, pending: 1, up: 2 };
+const sortValue: Record<SortKey, (m: Monitor) => string | number | null> = {
+  name: (m) => m.name,
+  group: (m) => m.group,
+  state: (m) => STATE_ORDER[m.state] * 2 + (m.maintenanceMode === "none" ? 0 : 1),
+  uptime: (m) => m.metrics30d.uptimePct,
+  downtime: (m) => m.metrics30d.downtimeMs,
+  lastCheck: (m) => m.lastCheck?.at ?? null,
+  response: (m) => m.lastCheck?.durationMs ?? null,
+  outage: (m) => m.currentOutageStartedAt,
+};
+const SORT_STORAGE_KEY = "monitors-sort";
+const collator = new Intl.Collator(undefined, { numeric: true, sensitivity: "base" });
+const compareValues = (a: string | number, b: string | number) =>
+  typeof a === "string" && typeof b === "string" ? collator.compare(a, b) : (a as number) - (b as number);
+
+const sort = ref<Sort>(null);
+onMounted(() => {
+  try {
+    const saved = JSON.parse(localStorage.getItem(SORT_STORAGE_KEY) ?? "null");
+    if (saved && saved.key in sortValue) sort.value = { key: saved.key, desc: !!saved.desc };
+  } catch {}
+});
+watch(sort, (s) => {
+  try {
+    if (s) localStorage.setItem(SORT_STORAGE_KEY, JSON.stringify(s));
+    else localStorage.removeItem(SORT_STORAGE_KEY);
+  } catch {}
+});
+const sortDirection = (key: SortKey) => (sort.value?.key === key ? (sort.value.desc ? "desc" : "asc") : null);
+function toggleSort(key: SortKey) {
+  const s = sort.value;
+  sort.value = s?.key !== key ? { key, desc: false } : s.desc ? null : { key, desc: true };
+}
+
+function sorted(list: Monitor[]): Monitor[] {
+  const s = sort.value;
+  if (!s) return list;
+  const value = sortValue[s.key];
+  return [...list].sort((a, b) => {
+    const va = value(a);
+    const vb = value(b);
+    if (va === null || vb === null) {
+      if (va !== vb) return va === null ? 1 : -1;
+    } else {
+      const diff = compareValues(va, vb);
+      if (diff !== 0) return s.desc ? -diff : diff;
+    }
+    return collator.compare(a.name, b.name);
+  });
+}
+
+// Phones get the same sort as a select and a direction button.
+const sortItems = [
+  { label: "Default order", value: "none" },
+  { label: "Name", value: "name" },
+  { label: "Group", value: "group" },
+  { label: "State", value: "state" },
+  { label: "Uptime 30d", value: "uptime" },
+  { label: "Downtime 30d", value: "downtime" },
+  { label: "Last check", value: "lastCheck" },
+  { label: "Response time", value: "response" },
+  { label: "Outage since", value: "outage" },
+];
+const mobileSortKey = computed({
+  get: () => sort.value?.key ?? "none",
+  set: (key: string) => (sort.value = key === "none" ? null : { key: key as SortKey, desc: sort.value?.desc ?? false }),
+});
+
 const visible = computed(() => {
   const q = search.value.trim().toLowerCase();
-  return props.monitors.filter((m) => {
+  return sorted(props.monitors.filter((m) => {
     if (q && !m.name.toLowerCase().includes(q) && !m.url.toLowerCase().includes(q)) return false;
     if (group.value === "__none__" ? m.group !== null : group.value !== "all" && m.group !== group.value) return false;
     if (status.value === "maintenance") return m.maintenanceMode !== "none";
     if (status.value !== "all" && m.state !== status.value) return false;
     return true;
-  });
+  }));
 });
 
 // Selection only ever contains visible monitors, so a bulk action never includes one you cannot see.
@@ -242,10 +316,34 @@ const bulk = (action: BulkAction) => emit("bulk", action, selected.value, clearS
         <MonitorStateBadges :monitor="row.original" size="sm" />
       </template>
 
+      <template #name-header>
+        <SortHeader label="Monitor" :direction="sortDirection('name')" @toggle="toggleSort('name')" />
+      </template>
+      <template #group-header>
+        <SortHeader label="Group" :direction="sortDirection('group')" @toggle="toggleSort('group')" />
+      </template>
+      <template #state-header>
+        <SortHeader label="State" :direction="sortDirection('state')" @toggle="toggleSort('state')" />
+      </template>
       <template #uptime-header>
-        <UTooltip text="Rolling 30 days. In parentheses: including silent maintenance">
-          <span class="underline decoration-dotted underline-offset-4">Uptime 30d</span>
-        </UTooltip>
+        <SortHeader label="Uptime 30d" :direction="sortDirection('uptime')" @toggle="toggleSort('uptime')">
+          <UTooltip text="Rolling 30 days. In parentheses: including silent maintenance">
+            <span class="underline decoration-dotted underline-offset-4">Uptime 30d</span>
+          </UTooltip>
+        </SortHeader>
+      </template>
+      <template #downtime-header>
+        <SortHeader label="Downtime 30d" :direction="sortDirection('downtime')" @toggle="toggleSort('downtime')" />
+      </template>
+      <template #lastCheck-header>
+        <span class="inline-flex items-center gap-2">
+          <SortHeader label="Last check" :direction="sortDirection('lastCheck')" @toggle="toggleSort('lastCheck')" />
+          <span class="text-dimmed">·</span>
+          <SortHeader label="Response" :direction="sortDirection('response')" @toggle="toggleSort('response')" />
+        </span>
+      </template>
+      <template #outage-header>
+        <SortHeader label="Outage since" :direction="sortDirection('outage')" @toggle="toggleSort('outage')" />
       </template>
       <template #uptime-cell="{ row }">
         <MetricPair
@@ -327,6 +425,18 @@ const bulk = (action: BulkAction) => emit("bulk", action, selected.value, clearS
           aria-label="Select all filtered monitors"
           @update:model-value="toggleAll"
         />
+        <div class="ms-auto flex items-center gap-1">
+          <USelect v-model="mobileSortKey" :items="sortItems" size="sm" class="w-36" aria-label="Sort monitors by" />
+          <UButton
+            v-if="sort"
+            size="sm"
+            color="neutral"
+            variant="ghost"
+            :icon="sort.desc ? 'i-lucide-arrow-down' : 'i-lucide-arrow-up'"
+            :aria-label="sort.desc ? 'Sorted descending, switch to ascending' : 'Sorted ascending, switch to descending'"
+            @click="sort = { key: sort.key, desc: !sort.desc }"
+          />
+        </div>
       </div>
       <ul class="divide-y divide-default">
         <li v-for="m in visible" :key="m.id" class="flex gap-3 px-4 py-3" :class="m.state === 'down' ? 'bg-error/5' : ''">
