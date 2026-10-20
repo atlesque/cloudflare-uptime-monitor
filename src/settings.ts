@@ -1,5 +1,5 @@
-// Settings changed from the dashboard, stored in D1: the ntfy channel and the default check
-// interval. ntfy falls back to the Wrangler secrets until it is saved from the dashboard.
+// Settings changed from the dashboard, stored in D1: the ntfy channel, the default check
+// interval and the Akamai troubleshooter link. ntfy falls back to the Wrangler secrets until it is saved from the dashboard.
 
 import { HttpError, readJsonObject } from "./http";
 import { normalizeMonitorUrl } from "./url";
@@ -18,6 +18,10 @@ interface StoredNtfy {
 
 interface StoredChecks {
   defaultIntervalMinutes: number;
+}
+
+interface StoredDiagnostics {
+  akamaiTroubleshooterUrl: string | null;
 }
 
 async function readSetting<T>(env: Env, key: string): Promise<T | null> {
@@ -164,11 +168,45 @@ export async function saveCheckSettings(env: Env, request: Request, now = Date.n
   return getSettings(env);
 }
 
+// ---- diagnostics ----
+
+export async function loadDiagnosticsSettings(env: Env): Promise<StoredDiagnostics> {
+  const stored = await readSetting<StoredDiagnostics>(env, "diagnostics");
+  return { akamaiTroubleshooterUrl: stored?.akamaiTroubleshooterUrl ?? null };
+}
+
+function parseTroubleshooterUrl(v: unknown): string | null {
+  if (v === undefined || v === null || v === "") return null;
+  if (typeof v !== "string") throw new HttpError(400, "akamaiTroubleshooterUrl must be a string");
+  let url: URL;
+  try {
+    url = new URL(v.trim());
+  } catch {
+    throw new HttpError(400, "akamaiTroubleshooterUrl must be a full URL, e.g. https://example.com/troubleshoot");
+  }
+  if (url.protocol !== "https:" && url.protocol !== "http:") {
+    throw new HttpError(400, "akamaiTroubleshooterUrl must start with https:// or http://");
+  }
+  return url.toString();
+}
+
+/** Body: { akamaiTroubleshooterUrl }. Empty turns the link off. */
+export async function saveDiagnosticsSettings(env: Env, request: Request, now = Date.now()) {
+  const body = await readJsonObject(request);
+  const stored: StoredDiagnostics = { akamaiTroubleshooterUrl: parseTroubleshooterUrl(body.akamaiTroubleshooterUrl) };
+  await writeSetting(env, "diagnostics", stored, now);
+  return getSettings(env);
+}
+
 // ---- read ----
 
 /** Everything the settings page shows. Tokens and secret values never leave the server. */
 export async function getSettings(env: Env) {
-  const [ntfy, checks] = await Promise.all([loadNtfyConfig(env), loadCheckSettings(env)]);
+  const [ntfy, checks, diagnostics] = await Promise.all([
+    loadNtfyConfig(env),
+    loadCheckSettings(env),
+    loadDiagnosticsSettings(env),
+  ]);
   return {
     ntfy: {
       source: ntfy.source,
@@ -180,5 +218,6 @@ export async function getSettings(env: Env) {
       secrets: { url: Boolean(env.NTFY_URL), topic: Boolean(env.NTFY_TOPIC), token: Boolean(env.NTFY_TOKEN) },
     },
     checks: { ...checks, intervals: CHECK_INTERVALS },
+    diagnostics,
   };
 }

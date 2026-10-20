@@ -142,6 +142,31 @@ async function saveInterval() {
   }
 }
 
+// ---- diagnostics ----
+
+const troubleshooterUrl = ref("");
+const troubleshooterSaving = ref(false);
+const troubleshooterChanged = computed(
+  () => troubleshooterUrl.value.trim() !== (settings.value?.diagnostics.akamaiTroubleshooterUrl ?? ""),
+);
+
+async function saveTroubleshooter() {
+  troubleshooterSaving.value = true;
+  try {
+    settings.value = await api("/api/settings/diagnostics", {
+      method: "PUT",
+      body: { akamaiTroubleshooterUrl: troubleshooterUrl.value.trim() },
+    });
+    troubleshooterUrl.value = settings.value!.diagnostics.akamaiTroubleshooterUrl ?? "";
+    await loadMe();
+    notify(troubleshooterUrl.value ? "Akamai references now link to the troubleshooter" : "Removed the troubleshooter link");
+  } catch (err) {
+    notify(errorMessage(err), "error");
+  } finally {
+    troubleshooterSaving.value = false;
+  }
+}
+
 // ---- groups ----
 
 const groups = ref<Group[]>([]);
@@ -190,7 +215,10 @@ function removeGroup(group: Group) {
 onMounted(async () => {
   await Promise.all([loadSettings(), loadMe(), loadGroups(), monitors.value.length ? null : refreshMonitors()]);
   fillNtfyForm();
-  if (settings.value) interval.value = String(settings.value.checks.defaultIntervalMinutes);
+  if (settings.value) {
+    interval.value = String(settings.value.checks.defaultIntervalMinutes);
+    troubleshooterUrl.value = settings.value.diagnostics.akamaiTroubleshooterUrl ?? "";
+  }
 });
 </script>
 
@@ -308,47 +336,74 @@ onMounted(async () => {
       </template>
 
       <template #monitors>
-        <!-- checks -->
-        <UCard>
-          <template #header>
-            <div class="flex items-center gap-2">
-              <UIcon name="i-lucide-timer" class="size-5 text-muted" />
-              <h2 class="font-semibold text-highlighted">Check frequency</h2>
-            </div>
-          </template>
-          <div v-if="!settings" class="space-y-2" aria-busy="true" aria-label="Loading check settings">
-            <USkeleton class="h-4 w-28" />
-            <USkeleton class="h-3 w-full max-w-md" />
-            <div class="flex gap-2">
-              <USkeleton class="h-8 w-56 rounded-md" />
-              <USkeleton class="h-8 w-16 rounded-md" />
-            </div>
-          </div>
-          <div v-else class="space-y-4">
-            <UFormField
-              label="Default interval"
-              :description="`Used by every monitor without its own interval. A monitor is marked down after two failed checks, so an outage is confirmed after about ${plural(2 * Number(interval), 'minute')}.`"
-            >
-              <div class="flex gap-2">
-                <USelect v-model="interval" :items="intervalItems" class="w-56" />
-                <UButton :loading="intervalSaving" :disabled="!intervalChanged" label="Save" @click="saveInterval" />
+        <div class="space-y-6">
+          <!-- checks -->
+          <UCard>
+            <template #header>
+              <div class="flex items-center gap-2">
+                <UIcon name="i-lucide-timer" class="size-5 text-muted" />
+                <h2 class="font-semibold text-highlighted">Check frequency</h2>
               </div>
-            </UFormField>
-            <div class="text-sm">
-              <p v-if="overrides.length === 0" class="text-muted">All monitors use the default. Set a monitor's own interval when editing it.</p>
-              <template v-else>
-                <p class="mb-2 text-muted">{{ plural(overrides.length, "monitor") }} {{ overrides.length === 1 ? "uses its" : "use their" }} own interval:</p>
-                <ul class="divide-y divide-default rounded-md border border-default">
-                  <li v-for="m in overrides" :key="m.id" class="flex items-center justify-between gap-3 px-3 py-2">
-                    <NuxtLink :to="`/#monitor-${m.id}`" class="truncate font-medium text-highlighted hover:underline">{{ m.name }}</NuxtLink>
-                    <span class="shrink-0 text-muted">{{ formatInterval(m.checkIntervalMinutes!) }}</span>
-                  </li>
-                </ul>
-              </template>
+            </template>
+            <div v-if="!settings" class="space-y-2" aria-busy="true" aria-label="Loading check settings">
+              <USkeleton class="h-4 w-28" />
+              <USkeleton class="h-3 w-full max-w-md" />
+              <div class="flex gap-2">
+                <USkeleton class="h-8 w-56 rounded-md" />
+                <USkeleton class="h-8 w-16 rounded-md" />
+              </div>
             </div>
-          </div>
-        </UCard>
+            <div v-else class="space-y-4">
+              <UFormField
+                label="Default interval"
+                :description="`Used by every monitor without its own interval. A monitor is marked down after two failed checks, so an outage is confirmed after about ${plural(2 * Number(interval), 'minute')}.`"
+              >
+                <div class="flex gap-2">
+                  <USelect v-model="interval" :items="intervalItems" class="w-56" />
+                  <UButton :loading="intervalSaving" :disabled="!intervalChanged" label="Save" @click="saveInterval" />
+                </div>
+              </UFormField>
+              <div class="text-sm">
+                <p v-if="overrides.length === 0" class="text-muted">All monitors use the default. Set a monitor's own interval when editing it.</p>
+                <template v-else>
+                  <p class="mb-2 text-muted">{{ plural(overrides.length, "monitor") }} {{ overrides.length === 1 ? "uses its" : "use their" }} own interval:</p>
+                  <ul class="divide-y divide-default rounded-md border border-default">
+                    <li v-for="m in overrides" :key="m.id" class="flex items-center justify-between gap-3 px-3 py-2">
+                      <NuxtLink :to="`/#monitor-${m.id}`" class="truncate font-medium text-highlighted hover:underline">{{ m.name }}</NuxtLink>
+                      <span class="shrink-0 text-muted">{{ formatInterval(m.checkIntervalMinutes!) }}</span>
+                    </li>
+                  </ul>
+                </template>
+              </div>
+            </div>
+          </UCard>
 
+          <!-- diagnostics -->
+          <UCard>
+            <template #header>
+              <div class="flex items-center gap-2">
+                <UIcon name="i-lucide-stethoscope" class="size-5 text-muted" />
+                <h2 class="font-semibold text-highlighted">Failed-check diagnostics</h2>
+              </div>
+            </template>
+            <div v-if="!settings" class="space-y-2" aria-busy="true" aria-label="Loading diagnostics settings">
+              <USkeleton class="h-4 w-40" />
+              <USkeleton class="h-3 w-full max-w-md" />
+              <USkeleton class="h-8 w-full max-w-md rounded-md" />
+            </div>
+            <form v-else @submit.prevent="saveTroubleshooter">
+              <UFormField
+                label="Akamai troubleshooter"
+                description="A page that looks up Akamai references, such as a site owner's own troubleshooter. Failed checks with an Akamai reference get a button that copies the reference and opens this page. Leave empty for no button."
+              >
+                <div class="flex gap-2">
+                  <UInput v-model="troubleshooterUrl" type="url" placeholder="https://diagnostic.example.com/" class="w-full max-w-md" />
+                  <UButton type="submit" :loading="troubleshooterSaving" :disabled="!troubleshooterChanged" label="Save" />
+                </div>
+              </UFormField>
+            </form>
+          </UCard>
+        </div>
       </template>
 
       <template #groups>

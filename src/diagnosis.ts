@@ -6,8 +6,10 @@ export interface Diagnosis {
   source: string | null;
   /** True when the response looks like a bot or WAF block rather than an outage. */
   blocked: boolean;
-  /** Akamai's "Reference #" or Cloudflare's Ray ID, for the site owner's support team. */
+  /** The most useful of `references` (Akamai's first), or null when there is none. */
   reference: string | null;
+  /** IDs to quote to the site owner's support team: Akamai's reference and Cloudflare's Ray ID. */
+  references: { label: string; value: string; meaning?: string }[];
   /** The observations behind the verdict, in plain words. */
   signals: string[];
 }
@@ -25,7 +27,7 @@ export function diagnose(status: number | null, headers: [string, string][] | nu
   if (server && /akamai/i.test(server)) akamai.push(`Server header is "${server}"`);
   for (const k of h.keys()) if (k === "akamai-grn" || k.startsWith("x-akamai")) akamai.push(`Akamai header ${k}`);
   if (/errors\.edgesuite\.net/i.test(text)) akamai.push("Body links to errors.edgesuite.net (Akamai error page)");
-  const akamaiRef = /Reference\s*#\s*([0-9a-f]+(?:\.[0-9a-f]+){2,})/i.exec(text)?.[1] ?? null;
+  const akamaiRef = findAkamaiReference(text);
   const botCookies = cookies.filter((c) => /^(ak_bmsc|bm_sv|bm_sz|bm_mi|_abck|bm_s|bm_so)$/.test(c));
   if (botCookies.length) akamai.push(`Akamai Bot Manager cookies set: ${botCookies.join(", ")}`);
 
@@ -42,6 +44,20 @@ export function diagnose(status: number | null, headers: [string, string][] | nu
   const envoyBody = /upstream connect error|no healthy upstream|upstream request timeout/i.exec(text)?.[0];
   if (envoyBody) envoy.push(`Body says "${envoyBody}" (Envoy proxy message)`);
 
+  const references: Diagnosis["references"] = [];
+  if (akamaiRef) {
+    const meaning = AKAMAI_ERROR_TYPES[akamaiRef.split(".")[0]];
+    references.push({ label: "Akamai reference", value: akamaiRef, ...(meaning ? { meaning } : {}) });
+  }
+  if (ray) references.push({ label: "Cloudflare Ray ID", value: ray });
+  const result = (source: string | null, blocked: boolean, signals: string[]): Diagnosis => ({
+    source,
+    blocked,
+    reference: references[0]?.value ?? null,
+    references,
+    signals,
+  });
+
   const signals: string[] = [];
   if (title) signals.push(`Page title "${title}"`);
   const retryAfter = get("retry-after");
@@ -49,38 +65,65 @@ export function diagnose(status: number | null, headers: [string, string][] | nu
 
   // An origin error passed through the CDN carries the origin's own markers; prefer those.
   if (envoy.length > 0) {
-    return {
-      source: "Origin (Envoy proxy)",
-      blocked: false,
-      reference: akamaiRef,
-      signals: [...envoy, ...akamai, ...signals, "The error came from the site's own servers, not from a CDN block"],
-    };
+    return result("Origin (Envoy proxy)", false, [
+      ...envoy,
+      ...akamai,
+      ...signals,
+      "The error came from the site's own servers, not from a CDN block",
+    ]);
   }
+  // An Akamai reference in the body names Akamai even when Cloudflare relayed the page.
   if (akamai.length > 0 || akamaiRef) {
     const denied = status === 403 || /access denied/i.test(title ?? text.slice(0, 2000));
-    return {
-      source: "Akamai",
-      blocked: denied,
-      reference: akamaiRef,
-      signals: [
-        ...akamai,
-        ...signals,
-        denied
-          ? "Looks like an Akamai access-denied (bot or WAF) block"
-          : "Akamai answered itself; it may not have reached the origin (edge or origin connection error)",
-      ],
-    };
+    if (akamaiRef && akamai.length === 0) akamai.push(`Body quotes an Akamai reference (#${akamaiRef})`);
+    return result("Akamai", denied, [
+      ...akamai,
+      ...cloudflare,
+      ...signals,
+      ...(cloudflare.length ? ["The response also passed through Cloudflare"] : []),
+      denied
+        ? "Looks like an Akamai access-denied (bot or WAF) block"
+        : "Akamai answered itself; it may not have reached the origin (edge or origin connection error)",
+    ]);
   }
   if (cloudflare.length > 0) {
     const challenge = mitigated !== null || /just a moment|attention required/i.test(title ?? "");
-    return {
-      source: "Cloudflare",
-      blocked: challenge,
-      reference: ray,
-      signals: [...cloudflare, ...signals, ...(challenge ? ["Looks like a Cloudflare challenge or block"] : [])],
-    };
+    return result("Cloudflare", challenge, [
+      ...cloudflare,
+      ...signals,
+      ...(challenge ? ["Looks like a Cloudflare challenge or block"] : []),
+    ]);
   }
-  return { source: null, blocked: false, reference: null, signals };
+  return result(null, false, signals);
+}
+
+// The first part of an Akamai reference is the kind of error the edge server hit.
+const AKAMAI_ERROR_TYPES: Record<string, string> = {
+  "0": "WAF or Bot Manager block: the request was taken for an attack or a bot",
+  "1": "Read timeout: the origin did not answer in time (120 s by default)",
+  "3": "Read error: Akamai connected to the origin, but no response came back",
+  "4": "Write error: the connection closed before Akamai could send the whole request",
+  "6": "Connection failed: the origin, or a firewall in front of it, refused the connection",
+  "7": "Invalid request: the request was malformed or not RFC compliant",
+  "11": "DNS failure: Akamai could not resolve the origin's hostname",
+  "13": "Forwarding denied: part of SureRoute testing, usually harmless",
+  "15": "Zero-size object: the origin sent an empty response",
+  "18": "Access denied: a WAF rule (including DoS protection and geoblocking), or a certificate name mismatch",
+  "24": "Referrer denied: the Referer header was not allowed",
+  "27": "Client abort: the client closed the connection to Akamai",
+  "30": "Origin TLS handshake failed: the origin's certificate is invalid, expired, missing its chain, or for another name",
+};
+
+/**
+ * Finds Akamai's error reference in a page, e.g. "Reference #18.5b6a1002.1792080000.3c4d5e6f".
+ * Sites often wrap it in their own words and markup ("referentie: <b>#0.103ad417.1792462692.15193b11</b>"),
+ * so this also accepts the bare "#" form: four dot-separated parts, the third a Unix time.
+ */
+export function findAkamaiReference(html: string): string | null {
+  const text = html.replace(/<[^>]*>/g, " ");
+  const labelled = /Reference\s*#\s*([0-9a-f]+(?:\.[0-9a-f]+){2,})/i.exec(text)?.[1];
+  if (labelled) return labelled;
+  return /#\s*([0-9a-f]{1,4}\.[0-9a-f]{4,10}\.\d{10}\.[0-9a-f]{4,10})(?![\w.])/i.exec(text)?.[1] ?? null;
 }
 
 // Akamai's error pages write "Reference #" as "Reference&#32;&#35;".

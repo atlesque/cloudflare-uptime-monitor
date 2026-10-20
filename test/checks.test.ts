@@ -207,6 +207,47 @@ describe("failed-check diagnostics", () => {
     expect(f.diagnosis.signals.join("\n")).toMatch(/ak_bmsc/);
   });
 
+  it("finds an Akamai reference a site wrapped in its own words, even behind Cloudflare", async () => {
+    const page = `<html><head><title>Access Denied</title></head><body><div id="error"><h1>Access Denied</h1><div><hr>
+      <p>Contacteer de servicedesk van Digitaal Vlaanderen met de volgende referentie: <b style="color: #FB2C00">#0.103ad417.1792462692.15193b11</b></p>
+    </div></div></body></html>`;
+    const id = await newMonitor();
+    fakeSites({
+      [SITE]: () =>
+        new Response(page, {
+          status: 403,
+          headers: { "Content-Type": "text/html", Server: "cloudflare", "CF-Ray": "a4d487d33b81b626-WAW" },
+        }),
+    });
+    await run();
+
+    const m = await getMonitor(id);
+    expect(m.failures[0]).toMatchObject({ source: "Akamai", blocked: true, reference: "0.103ad417.1792462692.15193b11" });
+    const f = (await (await api(`/api/monitors/${id}/failures/${m.failures[0].id}`)).json()) as any;
+    expect(f.diagnosis.references).toEqual([
+      {
+        label: "Akamai reference",
+        value: "0.103ad417.1792462692.15193b11",
+        meaning: "WAF or Bot Manager block: the request was taken for an attack or a bot",
+      },
+      { label: "Cloudflare Ray ID", value: "a4d487d33b81b626-WAW" },
+    ]);
+    expect(f.diagnosis.signals.join("\n")).toMatch(/passed through Cloudflare/);
+  });
+
+  it("does not take a CSS color or other hashes for an Akamai reference", async () => {
+    const id = await newMonitor();
+    fakeSites({
+      [SITE]: () =>
+        new Response(`<p style="color: #FB2C00">Error #1.2.3 at v#12.ab.34.cd</p>`, {
+          status: 403,
+          headers: { Server: "cloudflare", "CF-Ray": "abc-AMS" },
+        }),
+    });
+    await run();
+    expect((await getMonitor(id)).failures[0]).toMatchObject({ source: "Cloudflare", reference: "abc-AMS" });
+  });
+
   it("tells an origin error passed through the CDN apart from a block", async () => {
     const id = await newMonitor();
     fakeSites({

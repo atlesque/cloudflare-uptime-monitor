@@ -17,8 +17,10 @@ import { emailConfigured, ntfyConfigured, sendNtfy } from "./notifications";
 import { REPORT_CRON, reportHour, reportWindowOpen, runWeeklyReport } from "./report";
 import {
   getSettings,
+  loadDiagnosticsSettings,
   resetNtfySettings,
   saveCheckSettings,
+  saveDiagnosticsSettings,
   saveNtfySettings,
   sendNtfyTest,
 } from "./settings";
@@ -33,6 +35,7 @@ async function route(request: Request, env: Env, url: URL): Promise<Response> {
     return Response.json({
       timeZone: getTimeZone(),
       notifications: { email: emailConfigured(env), ntfy: await ntfyConfigured(env) },
+      akamaiTroubleshooterUrl: (await loadDiagnosticsSettings(env)).akamaiTroubleshooterUrl,
     });
   }
   if (path === "/api/monitors") {
@@ -57,6 +60,9 @@ async function route(request: Request, env: Env, url: URL): Promise<Response> {
     return Response.json(await sendNtfyTest(env, request, sendNtfy));
   }
   if (path === "/api/settings/checks" && method === "PUT") return Response.json(await saveCheckSettings(env, request));
+  if (path === "/api/settings/diagnostics" && method === "PUT") {
+    return Response.json(await saveDiagnosticsSettings(env, request));
+  }
   if (path === "/api/groups") {
     if (method === "GET") return Response.json(await listGroups(env));
     if (method === "POST") return Response.json(await createGroup(env, request), { status: 201 });

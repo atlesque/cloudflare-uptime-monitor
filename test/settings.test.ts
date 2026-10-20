@@ -258,3 +258,18 @@ describe("groups", () => {
     ]);
   });
 });
+
+describe("diagnostics settings", () => {
+  it("saves the Akamai troubleshooter link and shares it with the dashboard", async () => {
+    expect((await call("/api/settings")).body.diagnostics).toEqual({ akamaiTroubleshooterUrl: null });
+    expect((await call("/api/settings/diagnostics", json("PUT", { akamaiTroubleshooterUrl: "not a url" }))).status).toBe(400);
+    expect((await call("/api/settings/diagnostics", json("PUT", { akamaiTroubleshooterUrl: "javascript:alert(1)" }))).status).toBe(400);
+
+    const saved = await call("/api/settings/diagnostics", json("PUT", { akamaiTroubleshooterUrl: " https://diagnostic.example/vo " }));
+    expect(saved.body.diagnostics).toEqual({ akamaiTroubleshooterUrl: "https://diagnostic.example/vo" });
+    expect((await call("/api/me")).body.akamaiTroubleshooterUrl).toBe("https://diagnostic.example/vo");
+
+    await call("/api/settings/diagnostics", json("PUT", { akamaiTroubleshooterUrl: "" }));
+    expect((await call("/api/me")).body.akamaiTroubleshooterUrl).toBeNull();
+  });
+});
