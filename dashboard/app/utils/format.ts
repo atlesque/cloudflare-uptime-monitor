@@ -28,6 +28,16 @@ const dayFormat = computed(
 const clockFormat = computed(
   () => new Intl.DateTimeFormat("en-GB", { timeZone: timeZone.value, hour: "2-digit", minute: "2-digit", hourCycle: "h23" }),
 );
+const clockSecondsFormat = computed(
+  () =>
+    new Intl.DateTimeFormat("en-GB", {
+      timeZone: timeZone.value,
+      hour: "2-digit",
+      minute: "2-digit",
+      second: "2-digit",
+      hourCycle: "h23",
+    }),
+);
 const weekdayFormat = computed(() => new Intl.DateTimeFormat("en-GB", { timeZone: timeZone.value, weekday: "short" }));
 
 export const formatTime = (ms: number | null | undefined) => (ms == null ? "—" : shortFormat.value.format(new Date(ms)));
@@ -39,6 +49,9 @@ export const formatDay = (ms: number) => dayFormat.value.format(new Date(ms));
 
 /** e.g. "09:38" */
 export const formatClock = (ms: number) => clockFormat.value.format(new Date(ms));
+
+/** e.g. "09:38:12" */
+export const formatClockSeconds = (ms: number) => clockSecondsFormat.value.format(new Date(ms));
 
 /** e.g. "Tue" */
 export const formatWeekday = (ms: number) => weekdayFormat.value.format(new Date(ms));
