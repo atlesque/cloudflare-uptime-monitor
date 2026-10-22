@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import type { FailedCheck, Monitor, MonitorDetail } from "~/types";
+import type { FailedCheck, FailureSummary, Monitor, MonitorDetail } from "~/types";
 
 const props = defineProps<{ monitorId: number | null; checking: boolean; defaultInterval: number | null }>();
 const open = defineModel<boolean>("open", { required: true });
@@ -30,6 +30,7 @@ watch(
     if (previous && id !== previous[1]) {
       detail.value = null;
       expandedFailure.value = null;
+      openDays.value = new Set();
       failureCache.clear();
     }
     load();
@@ -59,6 +60,36 @@ async function toggleFailure(id: number) {
   } catch (err) {
     failureError.value = errorMessage(err);
   }
+}
+
+// Failed checks grouped per day (newest first), so a burst of failures takes one row.
+// Days start collapsed; the summary line says what happened.
+const failureDays = computed(() => {
+  const days: { key: string; failures: FailureSummary[]; summary: string }[] = [];
+  for (const failure of detail.value?.failures ?? []) {
+    const key = formatDay(failure.checkedAt);
+    const last = days.at(-1);
+    if (last?.key === key) last.failures.push(failure);
+    else days.push({ key, failures: [failure], summary: "" });
+  }
+  for (const day of days) {
+    const counts = new Map<string, number>();
+    for (const failure of day.failures) {
+      const label = failure.blocked ? `Blocked by ${failure.source}` : (failure.error ?? "Failed");
+      counts.set(label, (counts.get(label) ?? 0) + 1);
+    }
+    day.summary = [...counts]
+      .sort((a, b) => b[1] - a[1])
+      .map(([label, count]) => `${count} ${label}`)
+      .join(", ");
+  }
+  return days;
+});
+const openDays = ref(new Set<string>());
+function toggleDay(key: string) {
+  const next = new Set(openDays.value);
+  if (!next.delete(key)) next.add(key);
+  openDays.value = next;
 }
 
 function maintenanceText(silentMs: number, notifyMs: number) {
@@ -215,32 +246,53 @@ function maintenanceText(silentMs: number, notifyMs: number) {
             No failed checks recorded. The response of each failed check is kept here (the last 20).
           </div>
           <ul v-else class="divide-y divide-default rounded-lg border border-default">
-            <li v-for="failure in detail.failures" :key="failure.id">
+            <li v-for="day in failureDays" :key="day.key">
               <button
                 type="button"
-                class="flex w-full flex-wrap items-center gap-2 px-3 py-2 text-start text-sm hover:bg-elevated/50"
-                :aria-expanded="expandedFailure === failure.id"
-                @click="toggleFailure(failure.id)"
+                class="flex w-full items-start gap-2 px-3 py-2 text-start text-sm hover:bg-elevated/50"
+                :aria-expanded="openDays.has(day.key)"
+                @click="toggleDay(day.key)"
               >
                 <UIcon
                   name="i-lucide-chevron-right"
-                  class="size-4 shrink-0 text-muted transition-transform"
-                  :class="expandedFailure === failure.id && 'rotate-90'"
+                  class="mt-0.5 size-4 shrink-0 text-muted transition-transform"
+                  :class="openDays.has(day.key) && 'rotate-90'"
                 />
-                <span class="text-highlighted">{{ formatTime(failure.checkedAt) }}</span>
-                <span class="font-mono text-xs text-error">{{ failure.error }}</span>
-                <UBadge v-if="failure.blocked" color="warning" variant="subtle" size="sm">Blocked by {{ failure.source }}</UBadge>
-                <UBadge v-else-if="failure.source" color="neutral" variant="soft" size="sm">{{ failure.source }}</UBadge>
+                <span class="flex min-w-0 flex-wrap items-baseline gap-x-2">
+                  <span class="font-medium text-highlighted">{{ day.key }}</span>
+                  <span class="text-error">{{ day.failures.length }} failed</span>
+                  <span class="text-xs text-muted">{{ day.summary }}</span>
+                </span>
               </button>
-              <div v-if="expandedFailure === failure.id" class="border-t border-default p-3">
-                <UAlert v-if="failureError" color="error" variant="subtle" :description="failureError" />
-                <ResponseDiagnostics
-                  v-else-if="failureCache.get(failure.id)"
-                  :diagnostics="failureCache.get(failure.id)!.diagnostics"
-                  :diagnosis="failureCache.get(failure.id)!.diagnosis"
-                />
-                <USkeleton v-else class="h-24 w-full" />
-              </div>
+              <ul v-if="openDays.has(day.key)" class="divide-y divide-default border-t border-default bg-elevated/25">
+                <li v-for="failure in day.failures" :key="failure.id">
+                  <button
+                    type="button"
+                    class="flex w-full flex-wrap items-center gap-2 py-2 ps-9 pe-3 text-start text-sm hover:bg-elevated/50"
+                    :aria-expanded="expandedFailure === failure.id"
+                    @click="toggleFailure(failure.id)"
+                  >
+                    <UIcon
+                      name="i-lucide-chevron-right"
+                      class="size-4 shrink-0 text-muted transition-transform"
+                      :class="expandedFailure === failure.id && 'rotate-90'"
+                    />
+                    <span class="font-mono text-xs text-highlighted tabular-nums">{{ formatClockSeconds(failure.checkedAt) }}</span>
+                    <span class="font-mono text-xs text-error">{{ failure.error }}</span>
+                    <UBadge v-if="failure.blocked" color="warning" variant="subtle" size="sm">Blocked by {{ failure.source }}</UBadge>
+                    <UBadge v-else-if="failure.source" color="neutral" variant="soft" size="sm">{{ failure.source }}</UBadge>
+                  </button>
+                  <div v-if="expandedFailure === failure.id" class="border-t border-default bg-default p-3">
+                    <UAlert v-if="failureError" color="error" variant="subtle" :description="failureError" />
+                    <ResponseDiagnostics
+                      v-else-if="failureCache.get(failure.id)"
+                      :diagnostics="failureCache.get(failure.id)!.diagnostics"
+                      :diagnosis="failureCache.get(failure.id)!.diagnosis"
+                    />
+                    <USkeleton v-else class="h-24 w-full" />
+                  </div>
+                </li>
+              </ul>
             </li>
           </ul>
         </section>
