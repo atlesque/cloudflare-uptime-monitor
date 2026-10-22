@@ -1,7 +1,8 @@
 // Availability state machine.
 //
 // Pending -> Up after one success; any state -> Down after two consecutive
-// failures; Down -> Up after two consecutive successes.
+// failures; Down -> Up after two consecutive successes. An inconclusive check (the
+// monitor was blocked, so it learned nothing about the site) leaves everything as it was.
 
 export type MonitorState = "pending" | "up" | "down";
 export type Transition = "down" | "up" | null;
@@ -15,7 +16,8 @@ export interface Counters {
   consecutiveSuccesses: number;
 }
 
-export function applyCheck(prev: Counters, ok: boolean): Counters & { transition: Transition } {
+export function applyCheck(prev: Counters, ok: boolean | null): Counters & { transition: Transition } {
+  if (ok === null) return { ...prev, transition: null };
   const consecutiveFailures = ok ? 0 : prev.consecutiveFailures + 1;
   const consecutiveSuccesses = ok ? prev.consecutiveSuccesses + 1 : 0;
   const counters = { consecutiveFailures, consecutiveSuccesses };

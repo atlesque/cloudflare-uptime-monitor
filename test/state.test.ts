@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { applyCheck, type Counters } from "../src/state";
 
-function run(start: Counters["state"], checks: boolean[]) {
+function run(start: Counters["state"], checks: (boolean | null)[]) {
   let c: Counters = { state: start, consecutiveFailures: 0, consecutiveSuccesses: 0 };
   const transitions = [];
   for (const ok of checks) {
@@ -24,6 +24,13 @@ describe("availability state machine", () => {
 
   it("ignores isolated failures while Up", () => {
     expect(run("up", [false, true, false, true])).toEqual({ state: "up", transitions: [] });
+  });
+
+  it("leaves state and streaks alone on inconclusive checks", () => {
+    expect(run("up", [null, null, null])).toEqual({ state: "up", transitions: [] });
+    expect(run("up", [false, null, false])).toEqual({ state: "down", transitions: ["down"] });
+    expect(run("down", [true, null, true])).toEqual({ state: "up", transitions: ["up"] });
+    expect(run("pending", [null])).toEqual({ state: "pending", transitions: [] });
   });
 
   it("goes Down after two consecutive failures, once", () => {
