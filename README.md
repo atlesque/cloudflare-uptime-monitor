@@ -228,7 +228,8 @@ an authentication error, create an API token from the *Edit Cloudflare Workers* 
 - **Retry-After.** When a site answers `429` or `503` with `Retry-After`, it isn't checked again
   until then (at most 30 minutes later).
 - **State machine.** `Pending` → `Up` on the first success. Two consecutive failures → `Down`.
-  Two consecutive successes → `Up`.
+  Two consecutive successes → `Up`. A `403` recognised as an Akamai bot or WAF block only means the
+  monitor was turned away, so it is kept as a failed check but neither opens nor ends an incident.
 - **Incidents** run from the confirmed `Down` check to the confirmed `Up` check. They are kept
   for the rolling 30-day window; ongoing incidents are kept until they end.
 - **Notifications** go out once per confirmed transition, by email (Cloudflare Email Service)

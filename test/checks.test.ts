@@ -248,6 +248,48 @@ describe("failed-check diagnostics", () => {
     expect((await getMonitor(id)).failures[0]).toMatchObject({ source: "Cloudflare", reference: "abc-AMS" });
   });
 
+  it("keeps Akamai blocks as failed checks without opening an incident or notifying", async () => {
+    const id = await newMonitor();
+    const blocked = () =>
+      new Response(AKAMAI_DENIED, { status: 403, headers: { "Content-Type": "text/html", Server: "AkamaiGHost" } });
+    fakeSites({ [SITE]: [200, blocked, blocked, blocked, 200] });
+    await runEachMinute(5);
+
+    const m = await getMonitor(id);
+    expect(m.state).toBe("up");
+    expect(m.failures).toHaveLength(3);
+    expect(m.failures.every((f: any) => f.blocked)).toBe(true);
+    expect(await incidents(id)).toHaveLength(0);
+    const { results } = await env.DB.prepare(`SELECT kind FROM notifications WHERE monitor_id = ?`).bind(id).all();
+    expect(results).toHaveLength(0);
+  });
+
+  it("still opens an incident for other Akamai errors and other 403s", async () => {
+    const id = await newMonitor();
+    const akamai503 = () =>
+      new Response("<html><head><title>Service Unavailable</title></head><body>Reference&#32;&#35;3.5b6a1002.1792080000.3c4d5e6f</body></html>", {
+        status: 503,
+        headers: { Server: "AkamaiGHost" },
+      });
+    fakeSites({ [SITE]: [200, akamai503, akamai503, 200, 200, 403, 403] });
+    await runEachMinute(7);
+
+    const all = await incidents(id);
+    expect(all.map((i) => i.failure_reason)).toEqual(["HTTP 503", "HTTP 403"]);
+  });
+
+  it("does not let an Akamai block break up a real outage", async () => {
+    const id = await newMonitor();
+    const blocked = () => new Response(AKAMAI_DENIED, { status: 403, headers: { Server: "AkamaiGHost" } });
+    fakeSites({ [SITE]: [200, 500, blocked, 500, 200, blocked, 200] });
+    await runEachMinute(7);
+
+    const [incident, ...rest] = await incidents(id);
+    expect(rest).toHaveLength(0);
+    expect(incident.failure_reason).toBe("HTTP 500");
+    expect(incident.ended_at! - incident.started_at).toBe(3 * MINUTE);
+  });
+
   it("tells an origin error passed through the CDN apart from a block", async () => {
     const id = await newMonitor();
     fakeSites({

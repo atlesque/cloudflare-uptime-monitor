@@ -2,6 +2,7 @@
 // open/close incidents and record notifications on confirmed transitions.
 
 import type { Budget } from "./budget";
+import { isAkamaiBlock } from "./diagnosis";
 import type { MaintenanceMode, NotificationKind, NotificationPayload } from "./notifications";
 import { parseStoredHeaders } from "./headers";
 import type { ProbeResult } from "./probe";
@@ -86,9 +87,12 @@ export async function runChecks(env: Env, budget: Budget, now: () => number = Da
       console.warn(`Check of monitor ${m.id} deferred: subrequest budget exhausted`);
       return;
     }
+    // An Akamai bot or WAF block is kept as a failed check but neither opens nor ends an incident.
+    const d = result.diagnostics;
+    const blocked = !result.ok && d !== undefined && isAkamaiBlock(result.status, d.headers, d.body);
     const next = applyCheck(
       { state: m.state, consecutiveFailures: m.consecutive_failures, consecutiveSuccesses: m.consecutive_successes },
-      result.ok,
+      blocked ? null : result.ok,
     );
     outcomes.push({ monitorId: m.id, result, state: next.state, transition: next.transition });
 

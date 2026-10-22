@@ -97,6 +97,17 @@ export function diagnose(status: number | null, headers: [string, string][] | nu
   return result(null, false, signals);
 }
 
+/**
+ * True when a failed check was turned away by Akamai's bot or WAF rules (a 403 block page).
+ * Such a check says the monitor was blocked, not that the site is down, so it does not
+ * count towards incidents. Other Akamai errors, like a 503 when the origin is unreachable, do.
+ */
+export function isAkamaiBlock(status: number | null, headers: [string, string][] | null, body: string | null): boolean {
+  if (status !== 403) return false;
+  const d = diagnose(status, headers, body);
+  return d.source === "Akamai" && d.blocked;
+}
+
 // The first part of an Akamai reference is the kind of error the edge server hit.
 const AKAMAI_ERROR_TYPES: Record<string, string> = {
   "0": "WAF or Bot Manager block: the request was taken for an attack or a bot",
